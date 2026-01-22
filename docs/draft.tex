@@ -1,0 +1,447 @@
+\begin{document}
+
+\maketitle
+
+\begin{abstract}%
+  This paper research the statistical limits of representation learning via the InfoNCE objective when augmentations introduce false positives through polarity flips. We establish two-sided phase transition boundaries on the flip rate $p$ by reducing the InfoNCE objective to a spiked random matrix model in a high-dimensional regime. In the success regime ($p < p_-$), we prove that any empirical near-minimizer aligns with the ground-truth semantic subspace, supporting downstream linear probing with low sample complexity. Conversely, in the failure regime ($p > p_+$), we show that the reduced second-order object induced by our InfoNCE-to-spiked-matrix reduction (e.g., a whitened cross-covariance / CCA-like matrix) is asymptotically uninformative about the semantic subspace $\mathcal S$: any top-$K$ subspace estimator based only on these second-order statistics fails to recover $\mathcal S$, and representations obtained from such second-order estimators support at most chance-level linear probing accuracy ($1/K + o(1)$). Under specific scaling of the number of negatives $N$ and temperature $\tau$, we show these boundaries converge to an asymptotically sharp phase transition. Our results provide a rigorous theoretical foundation for understanding how label noise and hyperparameter scaling jointly determine the success of contrastive learning.
+\end{abstract}
+
+\begin{keywords}%
+  Contrastive Learning, InfoNCE%
+\end{keywords}
+
+\section{Introduction}
+\section{Main Results}
+\label{sec:main-results}
+
+We state our results for a stylized yet standard model that isolates how \emph{false positives} created by polarity flips interact with the InfoNCE hyperparameters (number of negatives $N$ and temperature $\tau$). Throughout, $K$ is the number of semantic classes and the \emph{semantic subspace} is
+$$
+\mathcal S := \mathrm{span}(\mu_1,\dots,\mu_K)\subset \mathbb R^d.
+$$
+
+\subsection{Data model and two-view augmentation}
+\paragraph{Orthogonal signed Gaussian mixture.}
+Let $y\sim\mathrm{Unif}([K])$ and let $s\sim\mathrm{Unif}(\{\pm 1\})$ be an independent polarity variable. We observe
+$$
+x = s\mu_y + \sigma z,\qquad z\sim\mathcal N(0,I_d),
+$$
+where the class means are orthogonal with equal norm: $\mu_k\perp\mu_\ell$ for $k\neq \ell$ and $\|\mu_k\|_2^2=\rho$.
+
+\paragraph{Polarity flipping (false positives).}
+Given $(y,s)$, draw a flipped polarity $\tilde s$ with
+$$
+\Pr(\tilde s=s)=1-p,\qquad \Pr(\tilde s=-s)=p.
+$$
+The two augmented views are
+$$
+x^{(1)} = s\mu_y + \sigma z_1,\qquad x^{(2)} = \tilde s\mu_y + \sigma z_2,
+$$
+with $z_1,z_2\stackrel{\mathrm{i.i.d.}}{\sim}\mathcal N(0,I_d)$. When $\tilde s\neq s$, the ``positive pair'' is semantically anti-aligned along the same latent direction $\mu_y$; we refer to these events as \emph{false positives} because InfoNCE encourages similarity even though the underlying semantic signal has opposite sign.
+
+\paragraph{Remark (why $p\in[0,\tfrac12]$ w.l.o.g.).}
+The model is symmetric under swapping labels of $s$ and $-s$. Quantities that depend on cross-view correlation only through $\mathbb E[s\tilde s]=1-2p$ are invariant under $p\mapsto 1-p$, hence we can restrict to $p\in[0,\tfrac12]$ without loss of generality.
+
+\paragraph{Lemma (cross-view semantic correlation under polarity flips).}
+Under the signed mixture model above,
+$$
+\mathbb E\big[(s\mu_y)^\top(\tilde s\mu_y)\big] = (1-2p)\rho,
+$$
+and
+$$
+\mathbb E\big[(s\mu_y)(\tilde s\mu_y)^\top\big]
+= (1-2p)\,\mathbb E[\mu_y\mu_y^\top]
+= (1-2p)\cdot \frac{1}{K}\sum_{k=1}^K \mu_k\mu_k^\top
+= (1-2p)\cdot \frac{\rho}{K}\,P_{\mathcal S},
+$$
+where $P_{\mathcal S}$ is the orthogonal projector onto $\mathcal S$.
+
+\paragraph{Interpretation.}
+The cross-view ``spike'' in second-order objects (whitened cross-covariance / CCA-like matrices) is proportional to $\mathbb E[s\tilde s]=1-2p$, and the corresponding signal-to-noise strength scales as $(1-2p)^2\cdot \rho/\sigma^2$ after normalization/whitening.
+
+\subsection{Representation class and objective}
+We study linear, normalized representations
+$$
+f_W(x)=\frac{Wx}{\|Wx\|_2}\in\mathbb S^{m-1},\qquad W\in\mathbb R^{m\times d},\ \ m\ge K.
+$$
+
+\paragraph{Hypothesis class (row-orthonormal / Stiefel).}
+We restrict the representation matrices to a bounded, explicit hypothesis class
+$$
+\mathcal W_{m,d}
+:=
+\{\, W\in\mathbb R^{m\times d} : WW^\top = I_m\,\}.
+$$
+This removes scale degeneracy (irrelevant due to output normalization), ensures $\|W\|_{\mathrm{op}}=1$ and $\|W\|_F=\sqrt m$, and yields finite metric entropy / Rademacher complexity so uniform convergence over $W$ is checkable.
+and the (population) InfoNCE loss with $N$ negatives and temperature $\tau>0$:
+$$
+\mathcal L(W)
+:= \mathbb E\Bigg[-\log\frac{\exp(\langle r,r^+\rangle/\tau)}{\exp(\langle r,r^+\rangle/\tau)+\sum_{j=1}^N\exp(\langle r,r_j^-\rangle/\tau)}\Bigg],
+$$
+where $r=f_W(x^{(1)})$, $r^+=f_W(x^{(2)})$, and $\{r_j^-\}_{j=1}^N$ are negatives drawn i.i.d. from the marginal distribution of $f_W(x)$.
+
+For an empirical objective $\widehat{\mathcal L}$ built from $M$ unlabeled two-view pairs, we call $\widehat W$ an $\varepsilon_{\mathrm{opt}}$-near-minimizer if
+$$
+\widehat{\mathcal L}(\widehat W)\le \inf_{W\in\mathcal W_{m,d}} \widehat{\mathcal L}(W) + \varepsilon_{\mathrm{opt}}.
+$$
+
+\subsection{Effective signal strength and phase boundaries}
+False positives attenuate and can reverse cross-view semantic correlation. We package this effect into a single scalar.
+
+\begin{definition}[Effective signal strength]
+\label{def:alpha}
+Define
+$$
+\alpha(p) := (1-2p)^2\cdot \frac{\rho}{\sigma^2}.
+$$
+Here $p$ is the polarity-flip rate in Section~\ref{sec:main-results}; the square reflects that the reduction depends on second-order cross-view quantities whose spike amplitude is proportional to $1-2p$.
+\end{definition}
+
+\paragraph{Concrete reduced spiked model (rectangular additive spike).}
+Define the (population-whitened) \emph{weighted cross-view matrix estimator} (a sample analogue of the weighted cross-covariance in Section~\ref{sec:proof-overview}):
+$$
+\widehat{Y}(W)
+:= \frac{1}{\sqrt{M}}\sum_{i=1}^M \phi_{\tau,N}^{(i)}\,\big(W\tilde{x}^{(1)}_i\big)\big(\tilde{x}^{(2)}_i\big)^\top
+\in \mathbb{R}^{m\times d},
+$$
+where $\tilde{x}=\Sigma^{-1/2}x$ and $\phi_{\tau,N}\in(0,1)$ is the InfoNCE softmax weight already defined in the draft.
+
+In the high-dimensional regime $d,m\to\infty$ with $d/m\to\gamma\in(0,\infty)$ and fixed $K$, we model the reduced matrix (after centering and negligible remainder terms) by the rank-$K$ additive spiked rectangular model
+$$
+Y = \theta(p)\, U V^\top + \frac{1}{\sqrt{m}}G,
+\qquad
+G_{ij}\stackrel{\mathrm{i.i.d.}}{\sim}\mathcal{N}(0,1),
+$$
+where $U\in\mathbb{R}^{m\times K}$ and $V\in\mathbb{R}^{d\times K}$ have orthonormal columns, and $\mathrm{col}(V)=\mathcal{S}$ (the semantic subspace). The spike strength is parameterized as
+$$
+\theta(p) := \lambda_{\tau,N}\,\sqrt{\alpha(p)},
+\qquad
+\alpha(p)=(1-2p)^2\cdot\frac{\rho}{\sigma^2},
+$$
+with $\alpha(p)$ exactly as in Definition~\ref{def:alpha}. Here $\lambda_{\tau,N}>0$ is a deterministic reduction constant induced by the weighting/normalization (equal to $1$ in the ``tight reduction'' scaling limit; otherwise it can be carried explicitly as below).
+
+\begin{lemma}[Explicit BBP threshold for the spiked model]
+\label{lem:bbp-explicit}
+For the model $Y=\theta U V^\top + \frac{1}{\sqrt{m}}G$ with $d/m\to\gamma\in(0,\infty)$ and fixed rank $K$, an information-carrying outlier (and non-trivial overlap of the top-$K$ right singular space with $\mathcal{S}$) appears if and only if
+$$
+\theta(p) > \gamma^{1/4}.
+$$
+Equivalently,
+$$
+\alpha(p) > \alpha_c^{\mathrm{BBP}}(\gamma,N,\tau,K)
+\quad\text{where}\quad
+\alpha_c^{\mathrm{BBP}}(\gamma,N,\tau,K):=\frac{\gamma^{1/2}}{\lambda_{\tau,N}^2}.
+$$
+Conversely, in the subcritical regime
+$$
+\theta(p) < \gamma^{1/4}
+\quad\Longleftrightarrow\quad
+\alpha(p) < \alpha_c^{\mathrm{fail}}(\gamma,N,\tau,K),
+\qquad
+\alpha_c^{\mathrm{fail}}(\gamma,N,\tau,K):=\frac{\gamma^{1/2}}{\lambda_{\tau,N}^2},
+$$
+the top-$K$ right singular space is asymptotically uninformative about $\mathcal{S}$.
+
+Moreover, when $\theta>\gamma^{1/4}$, the top singular value converges to the outlier location
+$$
+\sigma_{\mathrm{out}}(\theta)
+=
+\sqrt{\frac{(\theta^2+1)(\theta^2+\gamma)}{\theta^2}},
+$$
+while the bulk edge stays at $1+\sqrt{\gamma}$.
+\end{lemma}
+
+In the high-dimensional regime (formalized below), optimizing InfoNCE can be reduced (up to a controllable sandwich) to estimating the top-$K$ singular subspace of a \emph{spiked random matrix} whose spike amplitude scales with $\alpha(p)$; the BBP transition then governs when the learned representation recovers $\mathcal S$.
+
+To state two-sided phase boundaries without committing to a particular reduction surrogate, we parameterize the thresholds in terms of the reduced spiked model. Let $\alpha_c^{\mathrm{BBP}}(\gamma,N,\tau,K)$ denote a (sufficient) BBP-type threshold for the emergence of information-carrying outliers and nontrivial overlap with $\mathcal S$, and let $\alpha_c^{\mathrm{fail}}(\gamma,N,\tau,K)$ denote a (necessary) failure threshold below which the top-$K$ eigenspace remains asymptotically uninformative.
+
+\begin{definition}[Two-sided phase boundaries (explicit spiked-model version)]
+\label{def:phase-boundaries}
+Using the explicit thresholds in Lemma~\ref{lem:bbp-explicit}, define
+$$
+p_- := \tfrac12\left(1-\sqrt{\alpha_c^{\mathrm{BBP}}(\gamma,N,\tau,K)\cdot \frac{\sigma^2}{\rho}}\right),
+\qquad
+p_+ := \tfrac12\left(1-\sqrt{\alpha_c^{\mathrm{fail}}(\gamma,N,\tau,K)\cdot \frac{\sigma^2}{\rho}}\right),
+$$
+clipped to $[0,\tfrac12]$ as already stated in the draft. We clip to $[0,\tfrac12]$ since the signed model is symmetric under $p\mapsto 1-p$ (equivalently, swapping the polarity labels), and the effective strength depends on $p$ only through $|1-2p|$.
+
+In the ``tight reduction normalization'' where $\lambda_{\tau,N}=1$, we have $\alpha_c^{\mathrm{BBP}}=\alpha_c^{\mathrm{fail}}=\sqrt{\gamma}$ and thus $p_-=p_+$ (asymptotically sharp).
+\end{definition}
+
+\subsection{Main theorems: success for near-minimizers and failure}
+We measure recovery of the semantic subspace via a subspace overlap metric. For any matrix $W$ with row space $\mathrm{row}(W)$, define
+$$
+\mathrm{Align}(W)
+:= \frac{1}{K}\big\|P_{\mathrm{row}(W)}P_{\mathcal S}\big\|_F^2\in[0,1],
+$$
+where $P_{\mathcal U}$ denotes the orthogonal projector onto a subspace $\mathcal U$.
+
+\paragraph{High-dimensional regime.}
+We consider $d,m,M\to\infty$ with $\gamma:=d/m\to\gamma_0\in(0,\infty)$ and fixed $K$, and we focus on regimes of $(N,\tau)$ where the reduction to a spiked random matrix is tight enough to yield matching two-sided boundaries (see Section~\ref{sec:proof-overview}).
+
+\begin{theorem}[End-to-end success for empirical near-minimizers]
+\label{thm:success}
+Fix $K$ and let $d,m,M\to\infty$ with $d/m\to\gamma_0\in(0,\infty)$. There exist constants $c,C>0$ such that the following holds. Suppose
+$$
+\alpha(p) \ge (1+\delta)\,\alpha_c^{\mathrm{BBP}}(\gamma_0,N,\tau,K)
+$$
+for some $\delta\in(0,1)$, and the unlabeled sample size $M$ is large enough that the uniform deviation
+$$
+\varepsilon_{\mathrm{gen}}:=\sup_{W\in\mathcal W_{m,d}}\big|\widehat{\mathcal L}(W)-\mathcal L(W)\big|
+$$
+satisfies $\varepsilon_{\mathrm{gen}}\le c\delta$. Then with probability tending to $1$ (as $M\to\infty$), every empirical $\varepsilon_{\mathrm{opt}}$-near-minimizer $\widehat W$ satisfies
+$$
+\mathrm{Align}(\widehat W)\ \ge\ 1 - C\cdot\frac{\varepsilon_{\mathrm{opt}}+\varepsilon_{\mathrm{gen}}}{\delta}.
+$$
+In particular, any empirical near-minimizer aligns with the semantic subspace $\mathcal S$.
+
+Moreover, if $\mathrm{Align}(\widehat W)\ge a$ for some $a\in(0,1]$, then the induced representation $r=f_{\widehat W}(x)$ supports downstream multi-class linear probing with small labeled sample complexity: there exists a linear classifier achieving error at most $\eta$ using
+$$
+n\ \gtrsim\ \widetilde{\mathcal O}\Big(\frac{K+\log(1/\eta)}{\mathrm{Margin}(a,\rho/\sigma^2)}\Big)
+$$
+labeled samples, where $\mathrm{Margin}(a,\rho/\sigma^2)$ is a positive function increasing in $\sqrt a$ and $\sqrt{\rho/\sigma^2}$.
+\end{theorem}
+
+\begin{theorem}[Failure / non-identifiability from reduced second-order statistics]
+\label{thm:failure}
+In the same high-dimensional regime, there exists $c>0$ such that if
+$$
+\alpha(p)\ \le\ (1-\delta)\,\alpha_c^{\mathrm{fail}}(\gamma_0,N,\tau,K)
+$$
+for some $\delta\in(0,1)$, then the reduced second-order object (e.g., the whitened cross-covariance / CCA-like matrix arising from the InfoNCE reduction) contains no information about $\mathcal S$ asymptotically: any top-$K$ subspace estimator $\widehat{\mathcal S}$ constructed from these second-order statistics satisfies
+$$
+\big\|P_{\widehat{\mathcal S}}P_{\mathcal S}\big\|_F^2=o(1).
+$$
+Consequently, representations obtained from such second-order estimators do not support nontrivial linear probing: the best linear probe accuracy is at most $1/K+o(1)$.
+\end{theorem}
+
+\paragraph{Remark (Scope of the failure guarantee).}
+Theorem~\ref{thm:failure} is intentionally a ``safe'' statement: it rules out recovery of $\mathcal S$ (and hence better-than-chance linear probing) for any procedure that only accesses the reduced second-order object arising from our InfoNCE reduction (e.g., whitened cross-covariance / CCA-like statistics). It does not by itself assert that every population minimizer of the original InfoNCE objective is label-uninformative in the regime $p>p_+$; establishing such a claim would require an additional argument that the reduction is tight enough to characterize the full set of global population optima (or all near-optima) of InfoNCE in this regime.
+
+\begin{corollary}[Two-sided phase transition and asymptotic sharpness]
+\label{cor:sharp}
+For any $(\gamma,N,\tau,K)$, the boundaries in Definition~\ref{def:phase-boundaries} satisfy $p_-\le p_+$, yielding a ``gray zone'' $p\in[p_-,p_+]$ between provable success and provable failure.
+
+Furthermore, under regimes where the InfoNCE-to-spiked-matrix reduction becomes asymptotically tight (e.g., large $N$ with a matching temperature scaling $\tau=\tau_N$), the sandwich gap vanishes and
+$$
+\alpha_c^{\mathrm{BBP}}(\gamma,N,\tau_N,K)-\alpha_c^{\mathrm{fail}}(\gamma,N,\tau_N,K)\to 0,
+\qquad\text{hence }\qquad
+p_+ - p_- \to 0,
+$$
+giving an asymptotically sharp phase transition.
+\end{corollary}
+
+\section{Proof Overview}
+\label{sec:proof-overview}
+
+This section explains the proof strategy for Theorems~\ref{thm:success}--\ref{thm:failure} and Corollary~\ref{cor:sharp}, with enough precision to make the technical route checkable. The argument has three pillars:
+\begin{enumerate}
+\item \textbf{Population reduction (InfoNCE to a second-order surrogate).} We show that the population InfoNCE objective is sandwiched between monotone transforms of a spectral functional of a \emph{whitened cross-view second-order object}. The sandwich gap is explicit and vanishes in regimes where the reduction is tight.
+\item \textbf{Spiked random matrix analysis (BBP transition).} Under our orthogonal signed mixture, the reduced second-order object is an isotropic ``null'' plus a rank-$K$ deformation supported on the semantic subspace $\mathcal S$. Polarity flips shrink spike strength via $\mathbb E[s\tilde s]=1-2p$, and the resulting effective signal-to-noise parameter is $\alpha(p)=(1-2p)^2\rho/\sigma^2$.
+\item \textbf{From population optima to empirical near-minimizers.} We control uniform deviations of the empirical InfoNCE loss over the bounded hypothesis class $\mathcal W_{m,d}$, and then use a \emph{population gap} argument: in the supercritical (BBP) regime, any noticeably misaligned $W$ must incur a strictly larger population loss, forcing \emph{every} empirical near-minimizer to align with $\mathcal S$.
+\end{enumerate}
+
+Throughout, the role of the modeling assumptions is explicit:
+\begin{itemize}
+\item Orthogonality of $\{\mu_k\}_{k=1}^K$ and fixed $K$ guarantee a clean finite-rank spike supported on $\mathcal S$.
+\item The row-orthonormal constraint $WW^\top=I_m$ (together with output normalization) yields boundedness and manageable complexity, which is essential for the ``every near-minimizer'' guarantee.
+\end{itemize}
+
+\subsection{Step 0: recap and the high-dimensional limit}
+We work with the signed Gaussian mixture and polarity-flip augmentation from Section~\ref{sec:main-results}. The semantic subspace is $\mathcal S:=\mathrm{span}(\mu_1,\ldots,\mu_K)\subset\mathbb R^d$, and the polarity flip rate $p$ controls the cross-view semantic correlation through $\mathbb E[s\tilde s]=1-2p$.
+
+We consider $d,m,M\to\infty$ with aspect ratio $\gamma = d/m \to \gamma_0\in(0,\infty)$ and fixed $K$. The number of negatives $N$ and temperature $\tau$ may scale with dimension; the key requirement for the sharpness statement (Corollary~\ref{cor:sharp}) is that the reduction gap described in Step~1 becomes negligible under the chosen $(N,\tau)$ scaling.
+
+\subsection{Step 1: population reduction to a CCA-like second-order objective}
+Let $r=f_W(x^{(1)})$, $r^+=f_W(x^{(2)})$, and let $r^-_1,\ldots,r^-_N$ be negatives drawn i.i.d. from the marginal of $f_W(x)$. The per-sample InfoNCE loss is
+$$
+\ell(W)
+=
+-\log
+\frac{\exp(\langle r,r^+\rangle/\tau)}
+{\exp(\langle r,r^+\rangle/\tau)+\sum_{j=1}^N \exp(\langle r,r^-_j\rangle/\tau)}.
+$$
+Since $\langle r,\cdot\rangle\in[-1,1]$, we have the deterministic bound
+$$
+0 \le \ell(W) \le \log(N+1) + \frac{2}{\tau}.
+$$
+
+\paragraph{Population whitening.}
+For analysis, we work with population-whitened views. Let $\Sigma := \mathbb E[xx^\top]$, and define $\tilde x := \Sigma^{-1/2}x$. Under the signed mixture, $\mathbb E[x]=0$ and
+$$
+\Sigma = \mathbb E[\mu_y\mu_y^\top] + \sigma^2 I_d = \frac{\rho}{K}P_{\mathcal S} + \sigma^2 I_d,
+$$
+so whitening is well-defined and makes the noise approximately isotropic in the ambient space.
+
+\paragraph{A canonical second-order object.}
+The softmax structure induces a nonnegative weight. Define
+$$
+\phi_{\tau,N}(r,r^+,r^-_{1:N})
+:=
+\frac{\exp(\langle r,r^+\rangle/\tau)}
+{\exp(\langle r,r^+\rangle/\tau)+\sum_{j=1}^N \exp(\langle r,r^-_j\rangle/\tau)}
+\in(0,1).
+$$
+We then consider the population weighted cross-covariance
+$$
+C(W)
+:=
+\mathbb E\Big[\phi_{\tau,N}(r,r^+,r^-_{1:N})\,\tilde x^{(1)}(\tilde x^{(2)})^\top\Big].
+$$
+Crucially, $\phi_{\tau,N}$ depends on $(N,\tau)$ and on $W$ through the normalized inner products, but it is uniformly bounded in $[0,1]$.
+
+\paragraph{Reduction sandwich.}
+The main technical bridge is a two-sided comparison between minimizing $\mathcal L(W)=\mathbb E[\ell(W)]$ and maximizing a spectral functional of $C(W)$.
+
+\begin{lemma}[InfoNCE to second-order sandwich (formal)]
+\label{lem:infonce-sandwich}
+Let $W\in\mathcal{W}_{m,d}$, and let $\phi_{\tau,N}$ and the weighted whitened cross-covariance
+$$
+C(W) := \mathbb{E}\big[\phi_{\tau,N}(r,r^+,r^-_{1:N})\,\tilde{x}^{(1)}(\tilde{x}^{(2)})^\top\big]
+$$
+be as defined in Section~\ref{sec:proof-overview}. Define the spectral summary
+$$
+\mathrm{Spec}_K(C) := \sum_{i=1}^K \sigma_i(C),
+$$
+i.e., the Ky--Fan $K$-norm (sum of the top-$K$ singular values). Equivalently, $\mathrm{Spec}_K(C)$ is the sum of the top-$K$ canonical correlations between the two whitened views when restricted to $K$-dimensional subspaces, since singular values of a whitened cross-covariance are canonical correlations.
+
+Assume the following reduction regularity conditions hold:
+\begin{enumerate}
+\item \textbf{Negative concentration:} for $b_j:=\langle r,r^-_j\rangle$,
+$$
+\mathbb{E}\Big[\max_{1\le j\le N} |b_j|\Big]\le c_0\sqrt{\frac{\log N}{m}}.
+$$
+\item \textbf{Norm/normalization concentration:} there is $c_1>0$ such that
+$$
+\mathbb{E}\Big[\big|\|Wx\|_2^2-\mathbb{E}\|Wx\|_2^2\big|\Big]\le c_1\sqrt{m},
+$$
+implying an $O(m^{-1/2})$ control on the error induced by output normalization.
+\end{enumerate}
+Then there exists a universal constant $C>0$ such that, for all $W\in\mathcal{W}_{m,d}$,
+$$
+g_-\big(\mathrm{Spec}_K(C(W))\big)-\Delta_{\mathrm{red}}
+\;\le\;
+\mathcal{L}(W)
+\;\le\;
+g_+\big(\mathrm{Spec}_K(C(W))\big)+\Delta_{\mathrm{red}},
+$$
+where the two monotone functions $g_\pm:\mathbb{R}_{\ge 0}\to\mathbb{R}$ are explicitly
+$$
+g_-(s) := \log(N+1) - \frac{s}{\tau},
+\qquad
+g_+(s) := \log(N+1) - \frac{s}{\tau} + \frac{2}{\tau^2},
+$$
+and the reduction gap is bounded by
+$$
+\Delta_{\mathrm{red}}(N,\tau,d,m)
+\;\le\;
+C\left(
+\frac{1}{\tau^2}
++
+\sqrt{\frac{\log N}{m}}
++
+\frac{1}{\sqrt{m}}
+\right).
+$$
+
+In regimes where $\tau\to\infty$ and $m\to\infty$ with $\log N=o(m)$, we have $\Delta_{\mathrm{red}}=o(1)$, so near-minimizers of InfoNCE correspond to near-maximizers of $\mathrm{Spec}_K(C(W))$, making the reduction operational and citable.
+\end{lemma}
+
+In regimes where negative-sample concentration and the log-sum-exp bounds are tight, $\Delta_{\mathrm{red}}=o(1)$, so near-minimizers of InfoNCE correspond to near-maximizers of the surrogate, and the optimizing subspace is characterized by the top-$K$ singular space of a sample analogue $\widehat C(W)$ built from $M$ unlabeled pairs.
+
+\subsection{Step 2: spike strength under polarity flips and the role of $\alpha(p)$}
+Under the orthogonal signed mixture, the only non-isotropic structure lives in $\mathcal S$. Polarity flipping modifies cross-view alignment by $\mathbb E[s\tilde s]=1-2p$. At the level of whitened second-order objects, the informative component appears as a low-rank deformation supported on $\mathcal S$. Informally,
+$$
+\mathbb E[\tilde x^{(1)}(\tilde x^{(2)})^\top]
+=
+(1-2p)\cdot \Sigma^{-1/2}\Big(\frac{\rho}{K}P_{\mathcal S}\Big)\Sigma^{-1/2},
+$$
+so the spike amplitude scales linearly with $(1-2p)$ before applying the spectral surrogate.
+
+The effective strength parameter entering the spiked-matrix analysis is quadratic in the cross-view correlation, because detectability depends on a signal-to-noise ratio for second-order statistics. This leads to
+$$
+\alpha(p) := (1-2p)^2\cdot \frac{\rho}{\sigma^2}.
+$$
+
+\subsection{Step 3: BBP transition and population success}
+The reduction positions the problem in the universality class of \emph{finite-rank deformations of high-dimensional random matrices}. Concretely, in the whitened space and under the high-dimensional limit, the reduced sample object admits the schematic decomposition
+$$
+\widehat C(W)
+=
+C_0(W) + \theta(p)\,P_{\mathcal S} + \text{fluctuations},
+$$
+where $C_0(W)$ is an approximately isotropic ``null'' component and $\theta(p)\asymp \alpha(p)$ is the spike strength (up to $(N,\tau)$-dependent constants induced by $\phi_{\tau,N}$ and the chosen surrogate).
+
+Spiked random matrix theory implies a BBP-type phase transition: when the spike exceeds a critical threshold (depending on $\gamma_0$ and on how $(N,\tau)$ affect the effective noise level through the reduction), the top singular values separate from the bulk and the corresponding top-$K$ singular space has nontrivial overlap with $\mathcal S$.
+
+This yields the population implication used in Theorem~\ref{thm:success}: if
+$$
+\alpha(p) \ge (1+\delta)\,\alpha_c^{\mathrm{BBP}}(\gamma_0,N,\tau,K),
+$$
+then the surrogate has a strict spectral gap around $\mathcal S$, and any population optimizer (or near-optimizer) of the surrogate must have row space aligned with $\mathcal S$, with quantitative alignment controlled by $\delta$.
+
+\subsection{Step 4: from population structure to empirical near-minimizers}
+Theorem~\ref{thm:success} requires a ``for all near-minimizers'' conclusion. The proof combines uniform convergence with a population gap argument.
+
+\paragraph{Uniform convergence over $\mathcal W_{m,d}$.}
+Because $WW^\top=I_m$ and outputs are normalized, all relevant inner products lie in $[-1,1]$. Moreover, $\ell(W)$ is Lipschitz in these inner products with a constant on the order of $1/\tau$ (the derivative of the log-softmax is bounded by softmax probabilities), and $\ell(W)$ is uniformly bounded by $\log(N+1)+2/\tau$ as noted above. A standard covering/Rademacher argument for the Stiefel-type class then yields, with high probability,
+$$
+\varepsilon_{\mathrm{gen}}
+:=
+\sup_{W\in\mathcal W_{m,d}} \big| \widehat{\mathcal L}(W) - \mathcal L(W) \big|
+\;\le\;
+\widetilde O\!\left(\Big(\log(N+1)+\frac{1}{\tau}\Big)\sqrt{\frac{d}{M}}\right),
+$$
+where $\widetilde O(\cdot)$ hides polylogarithmic factors in $(d,m)$ and constants depending on the chosen metric entropy bound for $\mathcal W_{m,d}$.
+
+\paragraph{Near-minimizer transfer.}
+If $\widehat W$ is an $\varepsilon_{\mathrm{opt}}$-near-minimizer of the empirical loss, then
+$$
+\mathcal L(\widehat W)
+\le
+\inf_{W\in\mathcal W_{m,d}} \mathcal L(W) + \varepsilon_{\mathrm{opt}} + 2\varepsilon_{\mathrm{gen}}.
+$$
+
+\paragraph{Population gap enforces alignment.}
+In the BBP regime, the reduced objective (hence $\mathcal L(W)$ via the sandwich) has a strict gap: any row space with noticeable misalignment from $\mathcal S$ must lose a constant amount of spectral mass, translating into a population loss penalty of order $\Omega(\delta)$ after accounting for the monotone transforms. Comparing this penalty to $\varepsilon_{\mathrm{opt}}+2\varepsilon_{\mathrm{gen}}$ forces $\mathrm{Align}(\widehat W)$ to be close to $1$, yielding the quantitative bound stated in Theorem~\ref{thm:success}.
+
+\subsection{Step 5: downstream linear probing}
+Once $\mathrm{row}(\widehat W)$ is aligned with $\mathcal S$, the class means remain well-separated in representation space while the noise remains approximately spherical due to whitening and the row-orthonormal constraint. Standard margin-based generalization arguments for multiclass linear classifiers then convert the alignment and signal-to-noise parameters into a labeled sample complexity bound for linear probing, as stated in Theorem~\ref{thm:success}.
+
+\subsection{Step 6: failure from second-order statistics}
+On the failure side, if
+$$
+\alpha(p) \le (1-\delta)\,\alpha_c^{\mathrm{fail}}(\gamma_0,N,\tau,K),
+$$
+then the spike is subcritical for the induced spiked-matrix model: no informative outliers emerge, and the top-$K$ singular space of the reduced second-order object is asymptotically orthogonal to $\mathcal S$. This implies Theorem~\ref{thm:failure} in a deliberately conservative but broadly applicable form:
+\begin{itemize}
+\item \textbf{Non-identifiability:} any estimator of a $K$-dimensional subspace that is measurable with respect to the reduced second-order object (e.g., any procedure that relies only on whitened cross-covariance or CCA-like statistics produced by the reduction) has vanishing overlap with $\mathcal S$ asymptotically.
+\item \textbf{Practical scope:} this covers a wide class of contrastive estimators whose analyses or implementations effectively depend on such second-order summaries, ruling out better-than-chance linear probing for representations obtained from these second-order estimators in this regime.
+\end{itemize}
+This ``safe'' failure statement isolates what can be concluded from the reduction alone; it does not claim that \emph{every} global minimizer of the original InfoNCE objective is uninformative without an additional tightness argument for the full objective landscape.
+
+\subsection{Step 7: two-sided boundaries and asymptotic sharpness}
+Definitions~\ref{def:phase-boundaries} and Theorems~\ref{thm:success}--\ref{thm:failure} yield a gray zone $p\in[p_-,p_+]$ where sufficient and necessary conditions do not match. The width of this zone is controlled by the tightness of the reduction and the sharpness of the spiked-matrix thresholds.
+
+In regimes where the InfoNCE-to-second-order sandwich gap satisfies $\Delta_{\mathrm{red}}(N,\tau,d,m)=o(1)$, the sufficient and necessary thresholds coincide asymptotically:
+$$
+\alpha_c^{\mathrm{BBP}}(\gamma,N,\tau,K) - \alpha_c^{\mathrm{fail}}(\gamma,N,\tau,K) \to 0,
+$$
+which implies $p_+-p_-\to 0$ and yields the asymptotically sharp phase transition stated in Corollary~\ref{cor:sharp}.
+
+\section{Experiments}
+
+% Acknowledgments---Will not appear in anonymized version
+\acks{We thank a bunch of people and funding agency.}
+
+\bibliography{ref}
+
+\appendix
+
+% \crefalias{section}{appendix} % uncomment if you are using cleveref
+
+\section{Proof of Theorem 1}
+\section{Proof of Theorem 2}
+\section{Proof of Theorem 3}
+\section{Proof of Theorem 4}
+
+\end{document}
