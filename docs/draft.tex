@@ -179,15 +179,7 @@ $
 a_t := \langle w,\mu_t\rangle
 $
 where $\mu_t := \frac{1}{N}\sum_{i=1}^N x_{t,i}$.
-The target score is
-\begin{equation}
-\label{eq:target_score}
-s^\star
-\;:=\;
-\frac1T \sum_{t=1}^T a_t
-\;=\;
-\frac1T \sum_{t=1}^T \langle w,\mu_t\rangle .
-\end{equation}
+The target score is \eqref{eq:target_score}.
 Our goal is to output an estimate $\hat s$ with $|\hat s-s^\star|$ small, using at most $B$ token queries.
 
 \paragraph{Sparse events with drifting background (projected model).}
@@ -196,33 +188,20 @@ Specifically, there exists an unknown event set
 $$
 E=\bigcup_{j=1}^s [a_j,b_j]\subseteq\{1,\dots,T\}
 $$
-given by a union of $s$ disjoint intervals, and a decomposition
-\begin{equation}
-\label{eq:model}
-x_{t,i} = m_t + \mathbf{1}\{t\in E\}\,\delta_t + \xi_{t,i},
-\qquad
-\mathbb{E}[\xi_{t,i}\mid t]=0,
-\end{equation}
+given by a union of $s$ disjoint intervals, and a decomposition equation \eqref{eq:model},
 where the noise is $\sigma^2$-subGaussian in the score direction:
 $\langle w,\xi_{t,i}\rangle$ is $\sigma^2$-subGaussian.
 
 We impose two task-aligned conditions on the \emph{projected} mean sequence $\{a_t\}_{t=1}^T$:
 \begin{itemize}
 \item \textbf{(Bounded drift in the score direction).}
-For all $t\ge2$,
-\begin{equation}
-\label{eq:drift}
-| \langle w,m_t-m_{t-1}\rangle | \;\le\; \gamma .
-\end{equation}
+For all $t\ge2$, the equation~\eqref{eq:drift}.
 
 \item \textbf{(Piecewise-constant event shift in the score direction).}
 Let $\beta_t := \langle w,\delta_t\rangle$.
 We assume $\beta_t$ is constant within each event interval and bounded away from $0$:
-for each $j\in[s]$, there exists $\beta_j$ such that $\beta_t=\beta_j$ for all $t\in[a_j,b_j]$, and
-\begin{equation}
-\label{eq:signal}
-|\beta_j| \;\ge\; \Delta .
-\end{equation}
+for each $j\in[s]$, there exists $\beta_j$ such that $\beta_t=\beta_j$ for all $t\in[a_j,b_j]$, and equation will be \eqref{eq:signal}.
+
 Equivalently, $\{a_t\}$ is a slowly drifting background plus sparse mean-level shifts.
 This condition rules out arbitrarily many within-event oscillations in the \emph{task-relevant} direction, which is necessary to obtain an $O(s+\log T)$ bound on the number of detected change points.
 (If $\beta_t$ has $J$ additional jumps, all bounds below hold with $s$ replaced by $s+J$.)
@@ -241,20 +220,7 @@ Times with $g_t>\tau$ are marked as candidate boundaries; consecutive detections
 \textbf{Stage II (spatial refinement + background anchoring).}
 For each detected event anchor $t\in \widehat T$, we query $m$ additional tokens at time $t$ and form a refined estimate $\tilde a_t$.
 For each background segment, we also insert an anchor every $L$ time steps (a length cap), producing a set of background anchors $\widehat B$ with $|\widehat B|=\Theta(T/L)$; at each $b\in\widehat B$ we query $m_0$ tokens and form $\tilde a_b$.
-The final estimator averages refined anchors:
-\begin{equation}
-\label{eq:estimator}
-\hat s
-\;:=\;
-\frac1T
-\Bigg(
-\sum_{t\in \widehat T}\tilde a_t
-\;+\;
-\sum_{\text{segments }S\in\widehat{\mathcal{P}}}
-\sum_{t\in S\setminus\widehat T}
-\tilde a_{b(S)}
-\Bigg),
-\end{equation}
+The final estimator averages refined anchors:~\eqref{eq:estimator}
 where $b(S)\in \widehat B$ denotes the background anchor assigned to segment $S$ (e.g., the midpoint anchor under the length cap).
 
 \begin{table}[t]
@@ -365,21 +331,7 @@ then with probability at least $1-\eta$,
 \varepsilon \;+\;
 \underbrace{O(\gamma L)}_{\text{deterministic drift bias}}.
 \end{equation}
-Moreover, the total token usage satisfies
-\begin{equation}
-\label{eq:budget}
-B
-\;=\;
-rT \;+\; m|\widehat T| \;+\; m_0|\widehat B|
-\;=\;
-\tilde O\!\left(
-T\frac{\sigma^2}{(\Delta-2\gamma)^2}
-\;+\;
-(s+\log T)\frac{\sigma^2}{\varepsilon^2}
-\;+\;
-\frac{T}{L}\frac{\sigma^2}{\varepsilon^2}
-\right).
-\end{equation}
+Moreover, the total token usage satisfies ~\eqref{eq:budget}.
 \end{theorem}
 
 \paragraph{Interpreting the $O(\gamma L)$ term (constants and tightness).}
@@ -456,6 +408,7 @@ Our upper bounds analyze a concrete time-first screening scheme that does locali
 Promising directions include multiscale screening and group-testing style zoom-in procedures: e.g., start with a coarse subsampling of time, then iteratively allocate additional $r$-budget only to intervals whose projected statistics exceed a background-calibrated threshold.
 Such schemes aim to concentrate queries near the (unknown) $O(s)$ boundary locations and could plausibly reduce the scan cost toward $\tilde O(s\log(T/s))$ while retaining the task-aligned projection that makes Theorem~\ref{thm:screening} dimension-robust.
 
+\section{Experiments}
 \section{Conclusion}
 
 % Acknowledgments---Will not appear in anonymized version
