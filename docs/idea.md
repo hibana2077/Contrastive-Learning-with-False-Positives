@@ -1,300 +1,198 @@
-# Contrastive Learning with False Positives
+# Provable Time–Space Decoupling for Long-Form Video Compression
 
 ---
 
-## One-liner（摘要第一句那種）
+## 1. 問題設定與符號
 
-**我們在「語意翻轉增強」下，為線性 InfoNCE 表示學習給出一個由 BBP/spiked random matrix 決定的**兩側相變界**：上界保證任意近似極小值都會對齊語意子空間並支持小樣本線性 probe，下界則證明在另一側所有最優表示幾乎不含 label 資訊；在大負樣本或特定縮放下兩側界收斂，呈現近似 sharp 的臨界曲面。**
+* 影片長度：(T) 個時間步（可視為幀或短片段）。
+* 每個時間步有 (N) 個空間 tokens：({x_{t,i}\in\mathbb{R}^d}_{i=1}^N)。
+* 我們允許演算法「讀取」部分 tokens，總讀取數（token budget）記為 (B)。
+
+### 下游任務（刻意選 COLT 友好的族）
+
+先用最容易分析、但仍能對應 HOI/NLQ 的任務族：
+
+**(A) 線性打分/分類任務：**
+存在未知 (w\in\mathbb{R}^d)，(|w|*2\le 1)，真實打分
+[
+s^\star ;=; \frac{1}{T}\sum*{t=1}^T \Big\langle w,;\mu_t \Big\rangle,
+\quad
+\mu_t := \frac{1}{N}\sum_{i=1}^N x_{t,i}.
+]
+預測為 (\hat y = \mathrm{sign}(s)) 或用 hinge/logistic loss 分析。
+
+這足夠涵蓋「是否出現某個事件/動作概念」這種 long video 判別，也能作為更複雜 head 的理論替身（你可在實作中換成多類別或對比式檢索，但理論先站穩）。
 
 ---
 
-# Research Outline（可直接對應 paper 結構）
+## 2. 資料生成模型（稀疏事件 + 穩定背景）
 
-## 0. 目標與貢獻（你要賣的 3 個 punchlines）
+### 2.1 事件集合
 
-### 0.1 問題核心
+存在未知事件時間集合 (E\subseteq{1,\dots,T})，其結構為 (s) 個不交疊事件區間的聯集：
+[
+E = \bigcup_{j=1}^s [a_j, b_j],\qquad 1\le a_j\le b_j\le T.
+]
+你可加一個最常用且好證明的分離假設（事件之間至少隔 (\Delta_{\text{sep}})）。
 
-在 contrastive learning 中，augmentation 可能引入 **false positives**（正對其實不同語意）。你關心的是：**語意翻轉率 p 與 negatives 數 N、溫度 τ 如何共同決定「學到語意/學不到語意」的臨界現象**，而且要能做成 **兩側界**並在某些 regime 變得近似 sharp。
+### 2.2 背景穩定性（避免 joint 時空難題的關鍵）
 
-### 0.2 主要貢獻（建議寫成 Theorem 導向的 3 條）
+對每個時間 (t)，token 由「背景 + 事件增量 + 噪聲」組成：
+[
+x_{t,i} = m_t + \mathbf{1}{t\in E},\delta_t + \xi_{t,i}.
+]
 
-1. **（可泛化的成功定理）**：在有效訊號強度 (\alpha(p)=(1-2p)^2\rho/\sigma^2) 超過 BBP 門檻時，**任何近似 InfoNCE 極小值**都會學到 (\mathrm{span}(\mu_{1:K}))，並給出 downstream 線性 probe 的小樣本複雜度。
-2. **（可證明的失敗/不可辨識定理）**：在 (\alpha(p)) 低於另一門檻時，**所有 population 最優解皆「無語意」**（或更保守：所有只看二階統計的表示法都不可辨識），因此線性 probe 即使標記很多也受表示瓶頸限制。
-3. **（兩側界 + 漸近 sharp）**：導出 (p_-(\cdot)\le p_+(\cdot)) 的兩側界；在 (N\to\infty) 且 (\tau) 合理縮放等 regime 下，兩側界收斂，得到 **asymptotically sharp** 的相變曲面。
+* 背景均值 (m_t) 緩慢漂移：(|m_{t}-m_{t-1}|_2 \le \gamma)（小漂移）。
+* 事件增量 (\delta_t) 在事件期間有最小強度：(|\delta_t|_2 \ge \Delta)。
+* 噪聲 (\xi_{t,i}) 為零均值、(\sigma^2)-subGaussian（或 bounded）：
+  (\mathbb{E}[\xi_{t,i}]=0)，且有標準集中不等式可用。
+
+直覺：長時間背景相對穩定（(\gamma) 小），事件期間特徵均值發生顯著偏移（(\Delta) 大）。這正是 Ego4D 長影片常見型態。
 
 ---
 
-## 1. Setting 與符號（讓證明能閉式化的最小假設）
+## 3. 壓縮目標（你要證明什麼）
 
-### 1.1 資料：對稱正交 GMM
+演算法讀取 (B) 個 tokens 後，輸出壓縮估計 (\hat s) 近似 (s^\star)，並使得下游損失退化可控。
 
-* (y\sim\mathrm{Unif}([K]))
-* (x=\mu_y+\sigma z,; z\sim\mathcal N(0,I_d))
-* (\mu_k\perp \mu_\ell) 且 (|\mu_k|^2=\rho)
-
-### 1.2 Two-view augmentation：語意翻轉（false positives）
-
+最乾淨的目標是 **打分誤差**：
 [
-x^{(1)}=\mu_y+\sigma z_1,\quad
-x^{(2)}=\mu_{\tilde y}+\sigma z_2
+|\hat s - s^\star| \le \varepsilon
 ]
+或 **分類/損失差**（對 1-Lipschitz 損失 (\ell)）：
 [
-\Pr(\tilde y=y)=1-p,\quad \Pr(\tilde y\neq y)=p\ \text{且在 }[K]\setminus{y}\text{均勻}
-]
-
-### 1.3 表示：線性 + normalize
-
-[
-f_W(x)=\frac{Wx}{|Wx|}\in \mathbb S^{m-1},\quad W\in\mathbb R^{m\times d},\ m\ge K
-]
-
-### 1.4 目標：InfoNCE（N negatives、溫度 τ）
-
-* cosine similarity（normalize dot product）
-* negatives i.i.d. from marginal（或你也可以做 “in-batch negatives” 版本的 extension）
-
-### 1.5 高維極限（可選但建議）
-
-[
-d,m,M\to\infty,\quad \gamma=d/m\ \text{固定},\quad M \text{為 unlabeled pairs 數}
-]
-這是把 BBP 做漂亮的關鍵。
-
----
-
-## 2. 主量：有效訊號強度與「兩側界」的參數化
-
-### 2.1 有效訊號強度（你已定義得很好）
-
-[
-\alpha(p):=(1-2p)^2\cdot \frac{\rho}{\sigma^2}
-]
-直覺：語意翻轉把跨 view 語意相關縮到 ((1-2p))，二階訊號強度縮到平方。
-
-### 2.2 想得到的兩個 critical values（以 (\alpha) 表示）
-
-* (\alpha_c^{\mathrm{BBP}}(\gamma,N,\tau,K))：成功側（足夠條件）
-* (\alpha_c^{\mathrm{fail}}(\gamma,N,\tau,K))：失敗側（必要條件）
-
-然後把它們轉回 (p_-)、(p_+)：
-[
-p_-=\tfrac12\Big(1-\sqrt{\alpha_c^{\mathrm{BBP}}\cdot \sigma^2/\rho}\Big),\quad
-p_+=\tfrac12\Big(1-\sqrt{\alpha_c^{\mathrm{fail}}\cdot \sigma^2/\rho}\Big)
+\ell(\hat s, y)-\ell(s^\star,y)\le \varepsilon.
 ]
 
 ---
 
-## 3. Population reduction：把 InfoNCE 化約到二階結構（整篇最關鍵的橋）
+## 4. 兩階段演算法（Time → Space），完全對應 STIM-TM 的直覺但可證明
 
-這一節要做到：**在你的對稱 GMM + 線性 + normalize 下，population InfoNCE 最優方向等價於某個加權 cross-covariance / CCA-like 的主特徵向量問題**（或至少給出 tight 上下界，足以導出門檻）。
+### Step 1：時間偵測（用少量 token/幀摘要找事件區間）
 
-### 3.1 你可以主張的形式（模板）
-
-* 定義某個「有效 cross-covariance」矩陣（示意）
-  [
-  C := \mathbb E\big[\phi_{\tau,N}(x^{(1)},x^{(2)},{x^-*j})\cdot x^{(1)}(x^{(2)})^\top\big]
-  ]
-  其中 (\phi*{\tau,N}) 是由 softmax 權重誘導的標量權重（或向量權重），在某些 regime 可近似常數或只依賴內積。
-
-* 然後證明：對線性 encoder（含 normalize），**最優的 row-space 由 (C) 的 top-(K) 子空間決定**（或至少：若 (C) 有 spike，則最優解會拾取 spike）。
-
-### 3.2 兩個常見可走的「簡化極限」（用來把 (\phi) 變得可控）
-
-1. **大 N + 合理 τ 縮放**：InfoNCE 接近某種 log-density ratio / softmax averaging，使權重集中，得到較乾淨的二階形式。
-2. **(\tau\to 0)（max-approx）或 (\tau) 固定但用 Lipschitz 上下界**：把 log-sum-exp 夾在 max 和平均之間，導出可計算的 sandwich bounds。
-
-> 你不一定要完全等價；COLT 風格可以接受「上下界足以推出相同 BBP 門檻」。
-
----
-
-## 4. Spiked random matrix / BBP：導出成功側門檻 (\alpha_c^{\mathrm{BBP}})
-
-### 4.1 你要分析的物件（經由上節化約）
-
-通常會落到：某個 (m\times m) 或 (d\times d) 的樣本矩陣
+對每個時間 (t)，抽樣 (r) 個 tokens（(r\ll N)）估計該幀均值：
 [
-\widehat C=\frac1M\sum_{i=1}^M u_i v_i^\top
+\hat\mu_t = \frac{1}{r}\sum_{j=1}^r x_{t, I_{t,j}},
+\quad I_{t,j}\sim \text{Uniform}({1,\dots,N}).
 ]
-其中 ((u_i,v_i)) 是由兩 view 的線性投影（或 whiten 後）得到；其期望包含 rank-(K) spike（對應 (\mu_{1:K})），其餘為 isotropic noise。
-
-### 4.2 BBP 結論你要用的輸出（paper 需要的不是細節，而是「對齊量」）
-
-* 存在臨界 (\alpha_c^{\mathrm{BBP}}(\gamma,\cdot))，當 spike 強度超過它：
-
-  * top eigenvalue 脫離 bulk
-  * top eigenvector 與真子空間的對齊（overlap）為正，且可給 closed-form（或下界）
-
-你在 theorem A 裡要用的就是：
+計算變化分數（change score）：
 [
-\sin^2\angle(\mathrm{row}(\hat W),\mathrm{span}(\mu_{1:K}))\le \text{(optimization + generalization errors)}
+g_t = |\hat\mu_t - \hat\mu_{t-1}|_2.
 ]
+以閾值 (\tau) 偵測事件邊界，得到候選事件時間集合 (\widehat{E})（或候選區間集合 (\widehat{\mathcal{I}})）。接著對每個候選區間選代表時間點（例如取區間中點或最大分數點）形成集合 (\widehat{T})，其大小 (k:=|\widehat{T}|) 會與 (s) 同階。
 
----
+> 這一步的理論核心：subGaussian 均值估計 + 變化檢定的偵測/誤警機率控制。
 
-## 5. Empirical-to-population：近最小化器的一致性（COLT 味的核心）
+### Step 2：空間壓縮（只在 (\widehat{T}) 上花 token）
 
-你想要的是「不是只說存在一個好解」，而是：
-
-> **任何** empirical InfoNCE 的 (\varepsilon_{\text{opt}})-近最小值，都必然靠近 population 最小值集合，進而對齊 spike 子空間。
-
-### 5.1 可操作的做法（模板）
-
-1. 先證明 InfoNCE loss（對線性+normalize）在參數集合上是 **（局部）Lipschitz** 或滿足某種截斷後的 Lipschitz。
-2. 對假設類（例如 (|W|\le B)，或 row-orthonormal）做 uniform convergence：
-   [
-   \sup_W |\widehat{\mathcal L}(W)-\mathcal L(W)|\le \varepsilon_{\text{gen}}=\tilde O(\sqrt{d/M})
-   ]
-3. 得到「近最小化器 → 近 population 最小化器集合」：
-   [
-   \widehat{\mathcal L}(\hat W)\le \inf_W \widehat{\mathcal L}(W)+\varepsilon_{\text{opt}}
-   \Rightarrow
-   \mathcal L(\hat W)\le \inf_W \mathcal L(W)+(\varepsilon_{\text{opt}}+2\varepsilon_{\text{gen}})
-   ]
-4. 再把「population near-optimal → 子空間對齊」接上第 4 節的 BBP 幾何結論。
-
----
-
-## 6. Downstream：線性 probe 小樣本複雜度（把 representation 轉成可量化任務）
-
-這節的任務：把「對齊 (\mu) 子空間」變成「可分類」與 sample complexity。
-
-### 6.1 你可以主張的典型 statement
-
-* 若表徵空間中每一類的 mean 在某個 margin 下線性可分，則多類線性分類的泛化需要
-  [
-  n_{\text{lp}}=\tilde O\left(\frac{K}{\epsilon}\right)\ \text{或}\ \tilde O\left(\frac{K}{\epsilon^2}\right)
-  ]
-  取決於你用 0–1、margin bound、或 surrogate loss。
-
-### 6.2 你需要的橋接 lemma（常見且乾淨）
-
-* 表示對齊 ⇒ 類別在表示空間的中心距離 (\gtrsim) 某函數 (g(\alpha))
-* 噪聲在表示空間的擾動 (\lesssim) 某函數 (h(\sigma,\alpha,m))
-* 因此得到 margin，下游 sample complexity 就跟 margin 成反比。
-
----
-
-## 7. 失敗側：不可辨識 / 無語意最優解（Theorem B）
-
-你已經選了「夠強但更好證」的版本：**針對線性 InfoNCE（或更弱：所有二階統計表示）證明失敗**。
-
-### 7.1 兩個可選強度（你可依證明難度挑）
-
-**版本 B-strong（更像你原稿）**
-若 (\alpha(p)\le(1-\delta)\alpha_c^{\mathrm{fail}})，則任何 population minimizer (W^\star) 都滿足
+對每個被選時間 (t\in\widehat{T})，再抽樣 (m) 個 tokens（(m\ll N)）估計更精準的 (\tilde\mu_t)，用以近似真均值 (\mu_t)。最後用
 [
-I(y;f_{W^\star}(x))=o(1)
-\Rightarrow
-\text{best linear probe acc}\le \tfrac1K+o(1)
+\hat s ;=; \frac{1}{T}\sum_{t\notin \widehat{T}} \langle w, \tilde m_t\rangle
+;+; \frac{1}{T}\sum_{t\in \widehat{T}} \langle w, \tilde\mu_t\rangle
+]
+其中 (\tilde m_t) 可用「背景段落的 pooled 均值」或「鄰近非事件代表」替代（最簡單做法：用分段後每段一個背景代表均值）。
+
+> 這一步的理論核心：均值估計誤差如何轉成線性打分誤差。
+
+---
+
+## 5. 主定理（可直接寫在 paper 的 Theorem 1/2/3）
+
+### Theorem 1（事件偵測：高機率召回 + 有界誤警）
+
+在上述模型下，取
+[
+r ;\ge; C_1\frac{\sigma^2}{(\Delta-2\gamma)^2}\log\frac{T}{\eta},
+\qquad
+\tau = \frac{\Delta}{2}
+]
+且假設 (\Delta>2\gamma)。則以機率至少 (1-\eta)：
+
+1. 所有真正事件邊界都被偵測（或所有事件區間都與 (\widehat{\mathcal{I}}) 有交集）。
+2. 誤警數（偽邊界）至多 (O(\log(T/\eta)))（或更強：期望 (O(1)) 且高機率小於常數倍）。
+
+因此可選出 (k=O(s+\log(T/\eta))) 個代表時間點。
+
+**證明骨架：**
+
+* 用 subGaussian 集中不等式界 (|\hat\mu_t-\mu_t|_2) 的尾機率（union bound over (t)）。
+* 非事件處：(|\mu_t-\mu_{t-1}|\le\gamma)，所以 (g_t \le \gamma + \text{估計誤差})。
+* 事件邊界處：(|\mu_t-\mu_{t-1}|\ge \Delta-\gamma)（保守界），所以 (g_t \ge \Delta-\gamma - \text{估計誤差})。
+* 選 (\tau=\Delta/2) 並要求估計誤差小於 ((\Delta-2\gamma)/2) 即可分離。
+
+這是最穩、最不容易「證不動」的一段。
+
+---
+
+### Theorem 2（端到端打分誤差界：總 token 預算可控）
+
+在 (|w|\le 1) 下，若對每個 (t\in\widehat{T}) 取
+[
+m ;\ge; C_2\frac{\sigma^2}{\varepsilon^2}\log\frac{k}{\eta},
+]
+並將非事件時間用每段背景代表（每段再用 (m_0=O(\sigma^2/\varepsilon^2\log(1/\eta))) tokens 估計一次背景均值），則以機率至少 (1-\eta)：
+[
+|\hat s - s^\star|
+;\le;
+O!\left(\varepsilon\right)
+]
+且總 token 使用量
+[
+B ;=; rT ;+; mk ;+; m_0(#\text{背景段數})
+;=;
+\tilde O!\left(
+T\frac{\sigma^2}{(\Delta-2\gamma)^2}\log\frac{T}{\eta}
+;+;
+(s+\log T)\frac{\sigma^2}{\varepsilon^2}\log\frac{s}{\eta}
+\right).
 ]
 
-**版本 B-safe（更穩，通常更快證）**
-限制到「只依賴二階統計」的表示學習法：若 cross-covariance 的 spike 沒有脫離 bulk，則任何這類方法都無法 recover (\mathrm{span}(\mu_{1:K}))，因此表示不含可用 label 訊息。
+**證明骨架：**
 
-> 實務上 B-safe 很 COLT：清楚、乾淨、審稿也比較容易買單。
+* 用 (|\langle w, \tilde\mu_t-\mu_t\rangle|\le |\tilde\mu_t-\mu_t|)。
+* 將誤差分解為事件部分 + 背景部分，分別用均值估計集中界控制。
+* 用 union bound 控制所有被用到的均值估計。
 
-### 7.2 你要證的核心事實（直覺版）
-
-在低 (\alpha) 時，兩 view 的語意相關被 false positives 抹平，導致你化約出的二階物件（cross-covariance/CCA）只剩各向同性噪聲，top eigenspace 與真子空間不相關 ⇒ 表示對 label 幾乎獨立。
-
----
-
-## 8. 兩側界收斂：asymptotically sharp 的 regime（你想保留的「像主定理」味道）
-
-你要一個 section 專門說：
-
-* 對一般有限 (N,\tau)：我們得到帶狀區 (p_-\le p\le p_+)
-* 在某些 scaling：(\alpha_c^{\mathrm{BBP}}-\alpha_c^{\mathrm{fail}}\to 0)
-
-### 8.1 典型可賣的 regime（你可挑一個做到漂亮）
-
-1. **(N\to\infty) 且 (\tau) 隨 (\log N) 或緩慢縮放**：softmax 權重集中，使得 population reduction 的上下界貼近。
-2. **(\tau\to 0) 的 max-limit**：InfoNCE 變成近似 hard negative mining，解析式可能更乾淨（但要小心優化地形變得尖）。
-3. **固定 (K)，(\gamma) 固定，(M\to\infty)**：把 generalization 誤差消掉，剩下純粹 RMT 門檻。
+這定理的好處是：每一步都是標準集中工具，極少出現「假設牽強」。
 
 ---
 
-# Experiments Outline（一定要做，不然理論像「盆栽」）
+### Theorem 3（下界：沒有足夠 token，必然會失敗）
 
-即使是理論 paper，也建議做最少但漂亮的合成實驗，專門驗證「兩側界 + 近似 sharp」。
+在一個簡化但標準的子模型中（背景常數 (m_t\equiv 0)，事件為 (s) 個單點或短區間，事件時均值偏移為固定向量 (\delta)，(|\delta|=\Delta)，噪聲 (\sigma^2)-subGaussian），任何演算法若總讀取 tokens
+[
+B ;<; c\cdot \frac{\sigma^2}{\Delta^2}; s\log\frac{T}{s},
+]
+則存在一組分佈使其無法以機率超過 (2/3) 正確定位事件集合（或無法使 (|\hat s-s^\star|\le \varepsilon)）。
 
-## E1. 合成 GMM：相圖（主圖）
+**證明骨架（Fano/多重假設檢定）：**
 
-* 掃 (p\in[0,1/2])、掃 (N)、掃 (\tau)
-* 指標：
+* 把每個可能事件集合 (E)（大小 (s)）視為一個假設，假設數量 (\binom{T}{s})。
+* 每讀取一個 token 的 KL/互資訊增量上界為 (O(\Delta^2/\sigma^2))。
+* 套 Fano：要把錯誤率壓到常數以下，需要總互資訊 (\Omega(\log \binom{T}{s})=\Omega(s\log(T/s)))，因此得出 (B) 下界。
 
-  1. 表示與真子空間的 overlap（principal angles / subspace distance）
-  2. 線性 probe accuracy vs (n_{\text{lp}})
-  3. InfoNCE train loss（看是否有對應的曲率變化）
-* 圖：
-
-  * **Phase diagram heatmap**：x 軸 p、y 軸 N（或 (\tau)），顏色是 overlap/acc
-  * 疊上理論 (p_-)、(p_+) 曲線（兩條線夾出帶狀區）
-
-## E2. 驗證「兩側界收斂」的 regime
-
-* 固定 (\gamma,K,\rho/\sigma^2)
-* 讓 (N) 增大（同時用你理論建議的 (\tau(N))）
-* 看 empirically：帶狀區寬度 (p_+-p_-) 是否縮小
-
-## E3. 「只看二階統計」的 baseline（支撐 B-safe）
-
-* 用 cross-covariance/CCA 的 top eigenspace 直接做表示（不用 InfoNCE）
-* 對比：InfoNCE、CCA、random features
-* 在低 (\alpha) 時應該全部接近 random；高 (\alpha) 時 InfoNCE/CCA 都起來（或 InfoNCE 因 ((N,\tau)) 更敏感）
-
-## E4. 非單調性展示（你敘事裡的雙面刃）
-
-* 固定 (p) 接近臨界，掃 (N)
-* 觀察：太小 N 訊號不夠放大；太大 N 因 false negatives/同語意互斥干擾（視你的設定是否包含這機制）可能出現非單調
-* 如果你目前模型 negatives 完全 i.i.d. from marginal，false negatives 的效應可能弱；你可以加一個更貼近 in-batch 的版本作 extension（但主定理先不背這個包袱）
+這能防止你的工作被質疑「只是工程直覺」，因為你有 matching 的資訊論必要性。
 
 ---
 
-# 圖表與消融清單（審稿人最愛）
+## 6. 你寫論文時最不容易出錯的技術選擇
 
-1. **Fig.1**：模型示意圖（語意翻轉造成 false positives）
-2. **Fig.2**：理論相圖 + 實驗相圖（疊 (p_-,p_+)）
-3. **Fig.3**：對齊量（overlap）vs (\alpha(p))（顯示 BBP 形狀）
-4. **Fig.4**：probe sample complexity 曲線（acc vs (n_{\text{lp}})）在成功/失敗兩側
-5. **Ablation**：
+1. **先只做線性 head / Lipschitz loss 的理論**
+   你把核心貢獻放在「稀疏事件結構 ⇒ 時空解耦壓縮近似最優」，不要一開始就把 Transformer attention 的誤差傳播扛進來。
 
-   * 固定 (N) 改 (\tau)
-   * 固定 (\tau) 改 (N)
-   * 改 (\gamma=d/m)
-   * 改 (K)（先固定 K 最乾淨，再補一張 K 變動圖）
+2. **噪聲模型用 subGaussian（或 bounded）**
+   集中不等式最成熟，審稿也最買單。
 
----
+3. **事件條件用 (\Delta>2\gamma) 這種清楚可解釋的分離條件**
+   它直觀對應「事件變化幅度必須大於背景漂移」。
 
-# 可能的 Lemma / Theorem 清單（寫作時的骨架）
-
-你可以把整篇拆成 6 個可交付的 lemma 模塊：
-
-1. **Lemma (Population reduction)**：(\mathcal L_{\text{InfoNCE}}(W)) 與某個二階目標（CCA-like）等價或可 sandwich。
-2. **Lemma (Spike strength)**：在語意翻轉下，該二階目標的 spike 強度正比於 ((1-2p)^2\rho/\sigma^2)（或同量級）。
-3. **Theorem (BBP success)**：若 (\alpha>\alpha_c^{\mathrm{BBP}})，則估計的 top 子空間與 (\mathrm{span}(\mu_{1:K})) 有非零對齊且可定量。
-4. **Theorem (Uniform convergence + near-minimizers)**：empirical (\varepsilon_{\text{opt}})-近最小值 ⇒ population near-optimal。
-5. **Theorem A (End-to-end success)**：把 3+4 組起來，得到「任意近最小化器」對齊 + 線性 probe 小樣本。
-6. **Theorem B (Failure / identifiability)**：若 (\alpha<\alpha_c^{\mathrm{fail}})，則 population 最優解無語意 / 二階法不可辨識。
-
-最後一節再放：
-
-7. **Corollary (Two-sided bounds & asymptotic sharpness)**：定義 (p_-,p_+)，並給出收斂條件。
+4. **下界用 Fano（不要用太花的 lower bound 技巧）**
+   Fano + KL bound 是最穩、最不容易被挑剔的路線。
 
 ---
 
-# Extensions（放到 discussion / appendix，讓故事更大但不拖主證明）
+## 7. 與 Ego4D / Ego-Exo4D 的對應（寫 Related/Discussion 時可直接用）
 
-1. **非正交 (\mu_k)**：允許類別中心有 coherence，門檻改成依賴 Gram matrix 的譜。
-2. **非均勻 flip（class-dependent p）**：得到不對稱相圖，可能更貼近 real augmentation。
-3. **in-batch negatives / false negatives 明確化**：把 (N) 的雙面刃做得更真，可能出現更強的非單調。
-4. **非線性但「只看二階」的表示族**：把失敗側推廣到更大類（kernel CCA / random features）。
-5. **optimization dynamics**：在成功區證 GD 會進入對齊 basin（可選，有力但工作量大）。
-
----
-
-# 你可以怎麼在摘要/引言賣（超精準 COLT 口吻）
-
-* **現象**：false positives 會抹除跨 view 語意相關，導致對比學習在某個污染率後學不到語意。
-* **理論**：在線性 normalized encoder + 對稱 GMM 下，InfoNCE 的學習行為由一個 spiked random matrix 的 BBP 相變控制。
-* **結果**：我們給出兩側界：一側保證任意近最小化器對齊語意子空間並支援小樣本 probe；另一側則不可辨識，表示幾乎不含 label 訊息；在大負樣本/特定縮放下兩界收斂，呈現近似 sharp 臨界曲面。
+* Ego4D 長影片常見：大段背景視角維持（(\gamma) 小）、短時間 HOI 操作（(\Delta) 大、事件稀疏 (s) 小）。
+* 你的理論直接說明：**為何 time-first（先找事件段）再在事件段做空間壓縮，在 token budget 下是（近）最優策略**。
+* 對 NLQ/VQA，可把 (w) 或打分函數視為「query-conditioned 的線性探測器」作為第一步延伸，但不必在主定理硬塞進去（避免難度陡增）。

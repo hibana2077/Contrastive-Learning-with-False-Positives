@@ -1,0 +1,4 @@
+T,N,sigma,gamma,delta,r,m_event,m_bg,L,estimator,score_error_mean,score_error_std,boundary_precision_mean,boundary_precision_std,boundary_recall_mean,boundary_recall_std,boundary_f1_mean,boundary_f1_std,budget_used_mean,budget_used_std,n
+2000,256,1.0,0.05,0.25,32,512,512,5,oracle_seg,0.0047033348863587425,0.0022186523821698476,1.0,0.0,1.0,0.0,1.0,0.0,207872.0,0.0,5.0
+2000,256,1.0,0.05,0.25,32,512,512,20,oracle_seg,0.015396675735545729,0.006891039273954418,1.0,0.0,1.0,0.0,1.0,0.0,54272.0,0.0,5.0
+2000,256,1.0,0.05,0.25,32,512,512,80,oracle_seg,0.06028908448532291,0.041899528828636186,1.0,0.0,1.0,0.0,1.0,0.0,15872.0,0.0,5.0

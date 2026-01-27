@@ -3,432 +3,460 @@
 \maketitle
 
 \begin{abstract}%
-  This paper research the statistical limits of representation learning via the InfoNCE objective when augmentations introduce false positives through polarity flips. We establish two-sided phase transition boundaries on the flip rate $p$ by reducing the InfoNCE objective to a spiked random matrix model in a high-dimensional regime. In the success regime ($p < p_-$), we prove that any empirical near-minimizer aligns with the ground-truth semantic subspace, supporting downstream linear probing with low sample complexity. Conversely, in the failure regime ($p > p_+$), we show that the reduced second-order object induced by our InfoNCE-to-spiked-matrix reduction (e.g., a whitened cross-covariance / CCA-like matrix) is asymptotically uninformative about the semantic subspace $\mathcal S$: any top-$K$ subspace estimator based only on these second-order statistics fails to recover $\mathcal S$, and representations obtained from such second-order estimators support at most chance-level linear probing accuracy ($1/K + o(1)$). Under specific scaling of the number of negatives $N$ and temperature $\tau$, we show these boundaries converge to an asymptotically sharp phase transition. Our results provide a rigorous theoretical foundation for understanding how label noise and hyperparameter scaling jointly determine the success of contrastive learning.
+We study long-form video compression under a global token budget, where each time step contains many spatial tokens and only a subset can be queried.
+Under a sparse-event generative model with slowly drifting background, we analyze a simple \emph{time-first screening, space-second refinement} scheme.
+Our main results provide: (i) high-probability event screening guarantees from inexpensive per-time sampling, (ii) end-to-end accuracy bounds for preserving a fixed linear downstream score, including an explicit deterministic bias term induced by background drift anchoring, and (iii) an information-theoretic lower bound showing an $\Omega\!\big(\tfrac{\sigma^2}{\Delta^2}s\log(T/s)\big)$ barrier for localizing rare events.
+We also clarify the practical meaning of the separability condition $\Delta>2\gamma$: the \emph{margin} $\kappa:=\Delta-2\gamma$ governs stability and sample complexity, and guarantees degrade sharply as $\kappa\downarrow 0$.
 \end{abstract}
 
 \begin{keywords}%
-  Contrastive Learning, InfoNCE%
+Long-form video; token budget; time--space decoupling; sparse events; change detection; subGaussian noise; information-theoretic lower bounds%
 \end{keywords}
 
 \section{Introduction}
+\section{Setup}
+\label{sec:setup}
+
+% NOTE: The current draft already includes substantial setup material inside
+% \S\ref{sec:main_results}. If you paste this section in, consider moving (not duplicating)
+% the overlapping definitions to keep the paper concise.
+
+\paragraph{Query model and token budget.}
+A long-form video is indexed by time $t\in[T]:=\{1,\dots,T\}$.
+At each time step $t$, we observe a set of $N$ spatial tokens
+$\{x_{t,i}\in\mathbb{R}^d\}_{i=1}^N$.
+A \emph{query} reveals the full vector $x_{t,i}$ and costs one unit from a global token budget $B$.
+When we sample multiple tokens within the same time step, we assume \emph{uniform sampling without replacement}
+from $\{1,\dots,N\}$.
+
+\paragraph{Task: preserve a fixed linear score.}
+We analyze a task-aligned surrogate that is simple enough to admit clean guarantees, but still captures
+long-video recognition/retrieval heads after projection.
+Let $w\in\mathbb{R}^d$ be a fixed (known) linear head with $\|w\|_2\le 1$.
+Define the scalar projection
+$$
+y_{t,i}:=\langle w,x_{t,i}\rangle,
+\qquad
+\mu_t := \frac{1}{N}\sum_{i=1}^N x_{t,i},
+\qquad
+a_t := \langle w,\mu_t\rangle .
+$$
+The downstream quantity to preserve is the global average score
+\begin{equation}
+\label{eq:target_score}
+s^\star
+\;:=\;
+\frac{1}{T}\sum_{t=1}^T a_t
+\;=\;
+\frac{1}{T}\sum_{t=1}^T \langle w,\mu_t\rangle .
+\end{equation}
+Our goal is to output an estimator $\hat s$ with small error $|\hat s-s^\star|$ using at most $B$ queries.
+
+\paragraph{Sparse events with slowly drifting background.}
+We assume an unknown event set $E\subseteq[T]$ that is a union of $s$ disjoint intervals,
+$$
+E \;=\; \bigcup_{j=1}^s [a_j,b_j],
+\qquad
+1\le a_j\le b_j\le T,
+$$
+and a generative decomposition
+\begin{equation}
+\label{eq:model}
+x_{t,i}
+\;=\;
+m_t
+\;+\;
+\mathbf{1}\{t\in E\}\,\delta_t
+\;+\;
+\xi_{t,i},
+\qquad
+\mathbb{E}[\xi_{t,i}\mid t]=0 .
+\end{equation}
+We impose assumptions only in the \emph{task-relevant score direction} induced by $w$:
+\begin{itemize}
+\item \textbf{(SubGaussian noise in the score direction).}
+$\langle w,\xi_{t,i}\rangle$ is $\sigma^2$-subGaussian.
+\item \textbf{(Bounded background drift).}
+For all $t\ge 2$,
+\begin{equation}
+\label{eq:drift}
+\big|\langle w,m_t-m_{t-1}\rangle\big| \;\le\; \gamma .
+\end{equation}
+\item \textbf{(Event strength in the score direction).}
+Let $\beta_t:=\langle w,\delta_t\rangle$.
+Within each event interval $[a_j,b_j]$, $\beta_t$ is constant (denote it by $\beta_j$) and
+\begin{equation}
+\label{eq:signal}
+|\beta_j| \;\ge\; \Delta .
+\end{equation}
+\end{itemize}
+A key separability quantity is the \emph{screening margin}
+$$
+\kappa \;:=\; \Delta-2\gamma,
+$$
+which captures how well event-boundary changes separate from background drift after accounting for estimation noise.
+
+\paragraph{Time--space decoupled compression scheme.}
+We study a simple two-stage procedure that first spends a small, uniform budget to \emph{screen in time}
+and then concentrates queries to \emph{refine in space}.
+
+\smallskip
+\noindent
+\textbf{Stage I (temporal screening).}
+For each $t\in[T]$, query $r$ tokens and form the projected sample mean
+$$
+\hat a_t
+\;:=\;
+\frac{1}{r}\sum_{i\in\mathcal{I}_t} y_{t,i},
+\qquad
+\mathcal{I}_t\subseteq[N],\ |\mathcal{I}_t|=r.
+$$
+Define the change statistic $g_t:=|\hat a_t-\hat a_{t-1}|$ (for $t\ge 2$), and declare candidate boundaries when
+$g_t>\tau$ for a threshold $\tau$.
+By merging adjacent detections, we obtain a partition $\widehat{\mathcal{P}}$ of $[T]$ into segments and
+a set of \emph{event anchors} $\widehat T$ (e.g., one representative index per detected event segment).
+
+\smallskip
+\noindent
+\textbf{Stage II (spatial refinement and background anchoring).}
+For each event anchor $t\in\widehat T$, query $m$ additional tokens and form a refined estimate $\tilde a_t$.
+To control drift within long background segments, we also insert \emph{background anchors} every $L$ time steps,
+forming a set $\widehat B$ with $|\widehat B|=\Theta(T/L)$; at each $b\in\widehat B$ we query $m_0$ tokens and
+form $\tilde a_b$.
+Each segment $S\in\widehat{\mathcal{P}}$ is assigned a background anchor $b(S)\in \widehat B\cap S$
+(e.g., the midpoint anchor under the length cap $L$), and we estimate the per-time means in $S$
+by the corresponding anchor value.
+The final estimator averages refined anchors:
+\begin{equation}
+\label{eq:estimator}
+\hat s
+\;:=\;
+\frac{1}{T}
+\Bigg(
+\sum_{t\in \widehat T}\tilde a_t
+\;+\;
+\sum_{\text{segments }S\in\widehat{\mathcal{P}}}
+\sum_{t\in S\setminus\widehat T}
+\tilde a_{b(S)}
+\Bigg).
+\end{equation}
+
+\paragraph{Budget accounting and the $L$ tradeoff.}
+The total number of queried tokens is
+\begin{equation}
+\label{eq:budget}
+B
+\;=\;
+rT \;+\; m|\widehat T| \;+\; m_0|\widehat B|.
+\end{equation}
+The anchoring interval $L$ trades off (i) a deterministic approximation error from representing a drifting background
+with finitely many anchors (scaling as $O(\gamma L)$ under~\eqref{eq:drift}) and (ii) the anchor overhead
+$|\widehat B|=\Theta(T/L)$ in~\eqref{eq:budget}.
+
 \section{Main Results}
-\label{sec:main-results}
+\label{sec:main_results}
 
-We state our results for a stylized yet standard model that isolates how \emph{false positives} created by polarity flips interact with the InfoNCE hyperparameters (number of negatives $N$ and temperature $\tau$). Throughout, $K$ is the number of semantic classes and the \emph{semantic subspace} is
-$$
-\mathcal S := \mathrm{span}(\mu_1,\dots,\mu_K)\subset \mathbb R^d.
-$$
+This section establishes a provable baseline for \emph{time--space decoupled} compression of long-form videos under a global token budget.
+The key message is that, when task-relevant temporal structure is sparse, one can (i) spend a small, uniform budget to \emph{screen in time} for statistically significant changes, and then (ii) spend a larger, concentrated budget to \emph{refine in space} only on a small set of segment anchors.
+We also highlight an information-theoretic barrier for temporal localization.
 
-\subsection{Data model and two-view augmentation}
-\paragraph{Orthogonal signed Gaussian mixture.}
-Let $y\sim\mathrm{Unif}([K])$ and let $s\sim\mathrm{Unif}(\{\pm 1\})$ be an independent polarity variable. We observe
-$$
-x = s\mu_y + \sigma z,\qquad z\sim\mathcal N(0,I_d),
-$$
-where the class means are orthogonal with equal norm: $\mu_k\perp\mu_\ell$ for $k\neq \ell$ and $\|\mu_k\|_2^2=\rho$.
+Throughout, we analyze preservation of a fixed downstream \emph{linear scoring head}.
 
-\paragraph{Polarity flipping (false positives).}
-Given $(y,s)$, draw a flipped polarity $\tilde s$ with
-$$
-\Pr(\tilde s=s)=1-p,\qquad \Pr(\tilde s=-s)=p.
-$$
-The two augmented views are
-$$
-x^{(1)} = s\mu_y + \sigma z_1,\qquad x^{(2)} = \tilde s\mu_y + \sigma z_2,
-$$
-with $z_1,z_2\stackrel{\mathrm{i.i.d.}}{\sim}\mathcal N(0,I_d)$. When $\tilde s\neq s$, the ``positive pair'' is semantically anti-aligned along the same latent direction $\mu_y$; we refer to these events as \emph{false positives} because InfoNCE encourages similarity even though the underlying semantic signal has opposite sign.
+\paragraph{Token model.}
+The video consists of $T$ time steps.
+At each time $t$, there are $N$ spatial tokens $\{x_{t,i}\in\mathbb{R}^d\}_{i=1}^N$.
+Querying a token reveals its feature vector and incurs unit cost toward a global budget $B$.
+Within each time step, tokens are sampled \emph{uniformly without replacement}.
 
-\paragraph{Remark (why $p\in[0,\tfrac12]$ w.l.o.g.).}
-The model is symmetric under swapping labels of $s$ and $-s$. Quantities that depend on cross-view correlation only through $\mathbb E[s\tilde s]=1-2p$ are invariant under $p\mapsto 1-p$, hence we can restrict to $p\in[0,\tfrac12]$ without loss of generality.
+\paragraph{Downstream objective and task-relevant projection.}
+Let $w\in\mathbb{R}^d$ be a \emph{fixed and known} linear head with $\|w\|_2\le1$.
+Define the scalar token
+$
+y_{t,i}:=\langle w,x_{t,i}\rangle
+$
+and the (unknown) time-step mean
+$
+a_t := \langle w,\mu_t\rangle
+$
+where $\mu_t := \frac{1}{N}\sum_{i=1}^N x_{t,i}$.
+The target score is
+\begin{equation}
+\label{eq:target_score}
+s^\star
+\;:=\;
+\frac1T \sum_{t=1}^T a_t
+\;=\;
+\frac1T \sum_{t=1}^T \langle w,\mu_t\rangle .
+\end{equation}
+Our goal is to output an estimate $\hat s$ with $|\hat s-s^\star|$ small, using at most $B$ token queries.
 
-\paragraph{Lemma (cross-view semantic correlation under polarity flips).}
-Under the signed mixture model above,
+\paragraph{Sparse events with drifting background (projected model).}
+We assume that the score-direction process $a_t$ admits a sparse event + slowly drifting background decomposition.
+Specifically, there exists an unknown event set
 $$
-\mathbb E\big[(s\mu_y)^\top(\tilde s\mu_y)\big] = (1-2p)\rho,
+E=\bigcup_{j=1}^s [a_j,b_j]\subseteq\{1,\dots,T\}
 $$
-and
-$$
-\mathbb E\big[(s\mu_y)(\tilde s\mu_y)^\top\big]
-= (1-2p)\,\mathbb E[\mu_y\mu_y^\top]
-= (1-2p)\cdot \frac{1}{K}\sum_{k=1}^K \mu_k\mu_k^\top
-= (1-2p)\cdot \frac{\rho}{K}\,P_{\mathcal S},
-$$
-where $P_{\mathcal S}$ is the orthogonal projector onto $\mathcal S$.
-
-\paragraph{Interpretation.}
-The cross-view ``spike'' in second-order objects (whitened cross-covariance / CCA-like matrices) is proportional to $\mathbb E[s\tilde s]=1-2p$, and the corresponding signal-to-noise strength scales as $(1-2p)^2\cdot \rho/\sigma^2$ after normalization/whitening.
-
-\subsection{Representation class and objective}
-We study linear, normalized representations
-$$
-f_W(x)=\frac{Wx}{\|Wx\|_2}\in\mathbb S^{m-1},\qquad W\in\mathbb R^{m\times d},\ \ m\ge K.
-$$
-
-\paragraph{Hypothesis class (row-orthonormal / Stiefel).}
-We restrict the representation matrices to a bounded, explicit hypothesis class
-$$
-\mathcal W_{m,d}
-:=
-\{\, W\in\mathbb R^{m\times d} : WW^\top = I_m\,\}.
-$$
-This removes scale degeneracy (irrelevant due to output normalization), ensures $\|W\|_{\mathrm{op}}=1$ and $\|W\|_F=\sqrt m$, and yields finite metric entropy / Rademacher complexity so uniform convergence over $W$ is checkable.
-and the (population) InfoNCE loss with $N$ negatives and temperature $\tau>0$:
-$$
-\mathcal L(W)
-:= \mathbb E\Bigg[-\log\frac{\exp(\langle r,r^+\rangle/\tau)}{\exp(\langle r,r^+\rangle/\tau)+\sum_{j=1}^N\exp(\langle r,r_j^-\rangle/\tau)}\Bigg],
-$$
-where $r=f_W(x^{(1)})$, $r^+=f_W(x^{(2)})$, and $\{r_j^-\}_{j=1}^N$ are negatives drawn i.i.d. from the marginal distribution of $f_W(x)$.
-
-For an empirical objective $\widehat{\mathcal L}$ built from $M$ unlabeled two-view pairs, we call $\widehat W$ an $\varepsilon_{\mathrm{opt}}$-near-minimizer if
-$$
-\widehat{\mathcal L}(\widehat W)\le \inf_{W\in\mathcal W_{m,d}} \widehat{\mathcal L}(W) + \varepsilon_{\mathrm{opt}}.
-$$
-
-\subsection{Effective signal strength and phase boundaries}
-False positives attenuate and can reverse cross-view semantic correlation. We package this effect into a single scalar.
-
-\begin{definition}[Effective signal strength]
-\label{def:alpha}
-Define
-$$
-\alpha(p) := (1-2p)^2\cdot \frac{\rho}{\sigma^2}.
-$$
-Here $p$ is the polarity-flip rate in Section~\ref{sec:main-results}; the square reflects that the reduction depends on second-order cross-view quantities whose spike amplitude is proportional to $1-2p$.
-\end{definition}
-
-\paragraph{Concrete reduced spiked model (rectangular additive spike).}
-Define the (population-whitened) \emph{weighted cross-view matrix estimator} (a sample analogue of the weighted cross-covariance in Section~\ref{sec:proof-overview}):
-$$
-\widehat{Y}(W)
-:= \frac{1}{\sqrt{M}}\sum_{i=1}^M \phi_{\tau,N}^{(i)}\,\big(W\tilde{x}^{(1)}_i\big)\big(\tilde{x}^{(2)}_i\big)^\top
-\in \mathbb{R}^{m\times d},
-$$
-where $\tilde{x}=\Sigma^{-1/2}x$ and $\phi_{\tau,N}\in(0,1)$ is the InfoNCE softmax weight already defined in the draft.
-
-In the high-dimensional regime $d,m\to\infty$ with $d/m\to\gamma\in(0,\infty)$ and fixed $K$, we model the reduced matrix (after centering and negligible remainder terms) by the rank-$K$ additive spiked rectangular model
-$$
-Y = \theta(p)\, U V^\top + \frac{1}{\sqrt{m}}G,
+given by a union of $s$ disjoint intervals, and a decomposition
+\begin{equation}
+\label{eq:model}
+x_{t,i} = m_t + \mathbf{1}\{t\in E\}\,\delta_t + \xi_{t,i},
 \qquad
-G_{ij}\stackrel{\mathrm{i.i.d.}}{\sim}\mathcal{N}(0,1),
-$$
-where $U\in\mathbb{R}^{m\times K}$ and $V\in\mathbb{R}^{d\times K}$ have orthonormal columns, and $\mathrm{col}(V)=\mathcal{S}$ (the semantic subspace). The spike strength is parameterized as
-$$
-\theta(p) := \lambda_{\tau,N}\,\sqrt{\alpha(p)},
-\qquad
-\alpha(p)=(1-2p)^2\cdot\frac{\rho}{\sigma^2},
-$$
-with $\alpha(p)$ exactly as in Definition~\ref{def:alpha}. Here $\lambda_{\tau,N}>0$ is a deterministic reduction constant induced by the weighting/normalization (equal to $1$ in the ``tight reduction'' scaling limit; otherwise it can be carried explicitly as below).
+\mathbb{E}[\xi_{t,i}\mid t]=0,
+\end{equation}
+where the noise is $\sigma^2$-subGaussian in the score direction:
+$\langle w,\xi_{t,i}\rangle$ is $\sigma^2$-subGaussian.
 
-\begin{lemma}[Explicit BBP threshold for the spiked model]
-\label{lem:bbp-explicit}
-For the model $Y=\theta U V^\top + \frac{1}{\sqrt{m}}G$ with $d/m\to\gamma\in(0,\infty)$ and fixed rank $K$, an information-carrying outlier (and non-trivial overlap of the top-$K$ right singular space with $\mathcal{S}$) appears if and only if
-$$
-\theta(p) > \gamma^{1/4}.
-$$
-Equivalently,
-$$
-\alpha(p) > \alpha_c^{\mathrm{BBP}}(\gamma,N,\tau,K)
-\quad\text{where}\quad
-\alpha_c^{\mathrm{BBP}}(\gamma,N,\tau,K):=\frac{\gamma^{1/2}}{\lambda_{\tau,N}^2}.
-$$
-Conversely, in the subcritical regime
-$$
-\theta(p) < \gamma^{1/4}
-\quad\Longleftrightarrow\quad
-\alpha(p) < \alpha_c^{\mathrm{fail}}(\gamma,N,\tau,K),
-\qquad
-\alpha_c^{\mathrm{fail}}(\gamma,N,\tau,K):=\frac{\gamma^{1/2}}{\lambda_{\tau,N}^2},
-$$
-the top-$K$ right singular space is asymptotically uninformative about $\mathcal{S}$.
-
-Moreover, when $\theta>\gamma^{1/4}$, the top singular value converges to the outlier location
-$$
-\sigma_{\mathrm{out}}(\theta)
-=
-\sqrt{\frac{(\theta^2+1)(\theta^2+\gamma)}{\theta^2}},
-$$
-while the bulk edge stays at $1+\sqrt{\gamma}$.
-\end{lemma}
-
-In the high-dimensional regime (formalized below), optimizing InfoNCE can be reduced (up to a controllable sandwich) to estimating the top-$K$ singular subspace of a \emph{spiked random matrix} whose spike amplitude scales with $\alpha(p)$; the BBP transition then governs when the learned representation recovers $\mathcal S$.
-
-To state two-sided phase boundaries without committing to a particular reduction surrogate, we parameterize the thresholds in terms of the reduced spiked model. Let $\alpha_c^{\mathrm{BBP}}(\gamma,N,\tau,K)$ denote a (sufficient) BBP-type threshold for the emergence of information-carrying outliers and nontrivial overlap with $\mathcal S$, and let $\alpha_c^{\mathrm{fail}}(\gamma,N,\tau,K)$ denote a (necessary) failure threshold below which the top-$K$ eigenspace remains asymptotically uninformative.
-
-\begin{definition}[Two-sided phase boundaries (explicit spiked-model version)]
-\label{def:phase-boundaries}
-Using the explicit thresholds in Lemma~\ref{lem:bbp-explicit}, define
-$$
-p_- := \tfrac12\left(1-\sqrt{\alpha_c^{\mathrm{BBP}}(\gamma,N,\tau,K)\cdot \frac{\sigma^2}{\rho}}\right),
-\qquad
-p_+ := \tfrac12\left(1-\sqrt{\alpha_c^{\mathrm{fail}}(\gamma,N,\tau,K)\cdot \frac{\sigma^2}{\rho}}\right),
-$$
-clipped to $[0,\tfrac12]$ as already stated in the draft. We clip to $[0,\tfrac12]$ since the signed model is symmetric under $p\mapsto 1-p$ (equivalently, swapping the polarity labels), and the effective strength depends on $p$ only through $|1-2p|$.
-
-In the ``tight reduction normalization'' where $\lambda_{\tau,N}=1$, we have $\alpha_c^{\mathrm{BBP}}=\alpha_c^{\mathrm{fail}}=\sqrt{\gamma}$ and thus $p_-=p_+$ (asymptotically sharp).
-\end{definition}
-
-\subsection{Main theorems: success for near-minimizers and failure}
-We measure recovery of the semantic subspace via a subspace overlap metric. For any matrix $W$ with row space $\mathrm{row}(W)$, define
-$$
-\mathrm{Align}(W)
-:= \frac{1}{K}\big\|P_{\mathrm{row}(W)}P_{\mathcal S}\big\|_F^2\in[0,1],
-$$
-where $P_{\mathcal U}$ denotes the orthogonal projector onto a subspace $\mathcal U$.
-
-\paragraph{High-dimensional regime.}
-We consider $d,m,M\to\infty$ with $\gamma:=d/m\to\gamma_0\in(0,\infty)$ and fixed $K$, and we focus on regimes of $(N,\tau)$ where the reduction to a spiked random matrix is tight enough to yield matching two-sided boundaries (see Section~\ref{sec:proof-overview}).
-
-\begin{theorem}[End-to-end success for empirical near-minimizers]
-\label{thm:success}
-Fix $K$ and let $d,m,M\to\infty$ with $d/m\to\gamma_0\in(0,\infty)$. There exist constants $c,C>0$ such that the following holds. Suppose
-$$
-\alpha(p) \ge (1+\delta)\,\alpha_c^{\mathrm{BBP}}(\gamma_0,N,\tau,K)
-$$
-for some $\delta\in(0,1)$, and the unlabeled sample size $M$ is large enough that the uniform deviation
-$$
-\varepsilon_{\mathrm{gen}}:=\sup_{W\in\mathcal W_{m,d}}\big|\widehat{\mathcal L}(W)-\mathcal L(W)\big|
-$$
-satisfies $\varepsilon_{\mathrm{gen}}\le c\delta$. Then with probability tending to $1$ (as $M\to\infty$), every empirical $\varepsilon_{\mathrm{opt}}$-near-minimizer $\widehat W$ satisfies
-$$
-\mathrm{Align}(\widehat W)\ \ge\ 1 - C\cdot\frac{\varepsilon_{\mathrm{opt}}+\varepsilon_{\mathrm{gen}}}{\delta}.
-$$
-In particular, any empirical near-minimizer aligns with the semantic subspace $\mathcal S$.
-
-Moreover, if $\mathrm{Align}(\widehat W)\ge a$ for some $a\in(0,1]$, then the induced representation $r=f_{\widehat W}(x)$ supports downstream multi-class linear probing with small labeled sample complexity: there exists a linear classifier achieving error at most $\eta$ using
-$$
-n\ \gtrsim\ \widetilde{\mathcal O}\Big(\frac{K+\log(1/\eta)}{\mathrm{Margin}(a,\rho/\sigma^2)}\Big)
-$$
-labeled samples, where $\mathrm{Margin}(a,\rho/\sigma^2)$ is a positive function increasing in $\sqrt a$ and $\sqrt{\rho/\sigma^2}$.
-\end{theorem}
-
-\begin{theorem}[Failure / non-identifiability from reduced second-order statistics]
-\label{thm:failure}
-In the same high-dimensional regime, there exists $c>0$ such that if
-$$
-\alpha(p)\ \le\ (1-\delta)\,\alpha_c^{\mathrm{fail}}(\gamma_0,N,\tau,K)
-$$
-for some $\delta\in(0,1)$, then the reduced second-order object (e.g., the whitened cross-covariance / CCA-like matrix arising from the InfoNCE reduction) contains no information about $\mathcal S$ asymptotically: any top-$K$ subspace estimator $\widehat{\mathcal S}$ constructed from these second-order statistics satisfies
-$$
-\big\|P_{\widehat{\mathcal S}}P_{\mathcal S}\big\|_F^2=o(1).
-$$
-Consequently, representations obtained from such second-order estimators do not support nontrivial linear probing: the best linear probe accuracy is at most $1/K+o(1)$.
-\end{theorem}
-
-\paragraph{Remark (Scope of the failure guarantee).}
-Theorem~\ref{thm:failure} is intentionally a ``safe'' statement: it rules out recovery of $\mathcal S$ (and hence better-than-chance linear probing) for any procedure that only accesses the reduced second-order object arising from our InfoNCE reduction (e.g., whitened cross-covariance / CCA-like statistics). It does not by itself assert that every population minimizer of the original InfoNCE objective is label-uninformative in the regime $p>p_+$; establishing such a claim would require an additional argument that the reduction is tight enough to characterize the full set of global population optima (or all near-optima) of InfoNCE in this regime.
-
-\begin{corollary}[Two-sided phase transition and asymptotic sharpness]
-\label{cor:sharp}
-For any $(\gamma,N,\tau,K)$, the boundaries in Definition~\ref{def:phase-boundaries} satisfy $p_-\le p_+$, yielding a ``gray zone'' $p\in[p_-,p_+]$ between provable success and provable failure.
-
-Furthermore, under regimes where the InfoNCE-to-spiked-matrix reduction becomes asymptotically tight (e.g., large $N$ with a matching temperature scaling $\tau=\tau_N$), the sandwich gap vanishes and
-$$
-\alpha_c^{\mathrm{BBP}}(\gamma,N,\tau_N,K)-\alpha_c^{\mathrm{fail}}(\gamma,N,\tau_N,K)\to 0,
-\qquad\text{hence }\qquad
-p_+ - p_- \to 0,
-$$
-giving an asymptotically sharp phase transition.
-\end{corollary}
-
-\section{Proof Overview}
-\label{sec:proof-overview}
-
-This section explains the proof strategy for Theorems~\ref{thm:success}--\ref{thm:failure} and Corollary~\ref{cor:sharp}, with enough precision to make the technical route checkable. The argument has three pillars:
-\begin{enumerate}
-\item \textbf{Population reduction (InfoNCE to a second-order surrogate).} We show that the population InfoNCE objective is sandwiched between monotone transforms of a spectral functional of a \emph{whitened cross-view second-order object}. The sandwich gap is explicit and vanishes in regimes where the reduction is tight.
-\item \textbf{Spiked random matrix analysis (BBP transition).} Under our orthogonal signed mixture, the reduced second-order object is an isotropic ``null'' plus a rank-$K$ deformation supported on the semantic subspace $\mathcal S$. Polarity flips shrink spike strength via $\mathbb E[s\tilde s]=1-2p$, and the resulting effective signal-to-noise parameter is $\alpha(p)=(1-2p)^2\rho/\sigma^2$.
-\item \textbf{From population optima to empirical near-minimizers.} We control uniform deviations of the empirical InfoNCE loss over the bounded hypothesis class $\mathcal W_{m,d}$, and then use a \emph{population gap} argument: in the supercritical (BBP) regime, any noticeably misaligned $W$ must incur a strictly larger population loss, forcing \emph{every} empirical near-minimizer to align with $\mathcal S$.
-\end{enumerate}
-
-Throughout, the role of the modeling assumptions is explicit:
+We impose two task-aligned conditions on the \emph{projected} mean sequence $\{a_t\}_{t=1}^T$:
 \begin{itemize}
-\item Orthogonality of $\{\mu_k\}_{k=1}^K$ and fixed $K$ guarantee a clean finite-rank spike supported on $\mathcal S$.
-\item The row-orthonormal constraint $WW^\top=I_m$ (together with output normalization) yields boundedness and manageable complexity, which is essential for the ``every near-minimizer'' guarantee.
+\item \textbf{(Bounded drift in the score direction).}
+For all $t\ge2$,
+\begin{equation}
+\label{eq:drift}
+| \langle w,m_t-m_{t-1}\rangle | \;\le\; \gamma .
+\end{equation}
+
+\item \textbf{(Piecewise-constant event shift in the score direction).}
+Let $\beta_t := \langle w,\delta_t\rangle$.
+We assume $\beta_t$ is constant within each event interval and bounded away from $0$:
+for each $j\in[s]$, there exists $\beta_j$ such that $\beta_t=\beta_j$ for all $t\in[a_j,b_j]$, and
+\begin{equation}
+\label{eq:signal}
+|\beta_j| \;\ge\; \Delta .
+\end{equation}
+Equivalently, $\{a_t\}$ is a slowly drifting background plus sparse mean-level shifts.
+This condition rules out arbitrarily many within-event oscillations in the \emph{task-relevant} direction, which is necessary to obtain an $O(s+\log T)$ bound on the number of detected change points.
+(If $\beta_t$ has $J$ additional jumps, all bounds below hold with $s$ replaced by $s+J$.)
 \end{itemize}
 
-\subsection{Step 0: recap and the high-dimensional limit}
-We work with the signed Gaussian mixture and polarity-flip augmentation from Section~\ref{sec:main-results}. The semantic subspace is $\mathcal S:=\mathrm{span}(\mu_1,\ldots,\mu_K)\subset\mathbb R^d$, and the polarity flip rate $p$ controls the cross-view semantic correlation through $\mathbb E[s\tilde s]=1-2p$.
+\paragraph{Two-stage decoupled scheme (screen in time, refine in space).}
+\textbf{Stage I (temporal screening).}
+At each time $t$, we query $r$ tokens and form the sample mean
+$
+\hat a_t := \frac{1}{r}\sum_{i\in \mathcal{I}_t} y_{t,i}
+$
+where $\mathcal{I}_t$ is a size-$r$ subset sampled uniformly without replacement from $\{1,\dots,N\}$.
+We define the screening statistic $g_t := |\hat a_t-\hat a_{t-1}|$.
+Times with $g_t>\tau$ are marked as candidate boundaries; consecutive detections are merged to form detected boundary blocks, from which we construct a partition $\widehat{\mathcal{P}}$ and a set of segment anchors $\widehat T$.
 
-We consider $d,m,M\to\infty$ with aspect ratio $\gamma = d/m \to \gamma_0\in(0,\infty)$ and fixed $K$. The number of negatives $N$ and temperature $\tau$ may scale with dimension; the key requirement for the sharpness statement (Corollary~\ref{cor:sharp}) is that the reduction gap described in Step~1 becomes negligible under the chosen $(N,\tau)$ scaling.
+\textbf{Stage II (spatial refinement + background anchoring).}
+For each detected event anchor $t\in \widehat T$, we query $m$ additional tokens at time $t$ and form a refined estimate $\tilde a_t$.
+For each background segment, we also insert an anchor every $L$ time steps (a length cap), producing a set of background anchors $\widehat B$ with $|\widehat B|=\Theta(T/L)$; at each $b\in\widehat B$ we query $m_0$ tokens and form $\tilde a_b$.
+The final estimator averages refined anchors:
+\begin{equation}
+\label{eq:estimator}
+\hat s
+\;:=\;
+\frac1T
+\Bigg(
+\sum_{t\in \widehat T}\tilde a_t
+\;+\;
+\sum_{\text{segments }S\in\widehat{\mathcal{P}}}
+\sum_{t\in S\setminus\widehat T}
+\tilde a_{b(S)}
+\Bigg),
+\end{equation}
+where $b(S)\in \widehat B$ denotes the background anchor assigned to segment $S$ (e.g., the midpoint anchor under the length cap).
 
-\subsection{Step 1: population reduction to a CCA-like second-order objective}
-Let $r=f_W(x^{(1)})$, $r^+=f_W(x^{(2)})$, and let $r^-_1,\ldots,r^-_N$ be negatives drawn i.i.d. from the marginal of $f_W(x)$. The per-sample InfoNCE loss is
-$$
-\ell(W)
-=
--\log
-\frac{\exp(\langle r,r^+\rangle/\tau)}
-{\exp(\langle r,r^+\rangle/\tau)+\sum_{j=1}^N \exp(\langle r,r^-_j\rangle/\tau)}.
-$$
-Since $\langle r,\cdot\rangle\in[-1,1]$, we have the deterministic bound
-$$
-0 \le \ell(W) \le \log(N+1) + \frac{2}{\tau}.
-$$
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{l p{4.2cm} p{5.3cm}}
+\hline
+\textbf{Result} & \textbf{Guarantee (output)} & \textbf{Key conditions and token scaling} \\
+\hline
+Thm.~\ref{thm:screening} & Detect all true entry/exit boundaries (up to small localization error) and bound $|\widehat{\partial E}|$ & Margin $\kappa=\Delta-2\gamma>0$; $r=\Theta\!\big(\sigma^2\kappa^{-2}\log(T/\eta)\big)$; suitable threshold $\tau$ \\
+Thm.~\ref{thm:accuracy} & End-to-end score accuracy $|\hat s-s^\star|\le \varepsilon + O(\gamma L)$ & Refinement $m,m_0=\Theta\!\big(\sigma^2\varepsilon^{-2}\log(\cdot/\eta)\big)$; anchor overhead $|\widehat B|=\Theta(T/L)$ \\
+Thm.~\ref{thm:lower} & Localization requires $\Omega\!\big(\frac{\sigma^2}{\Delta^2}s\log(T/s)\big)$ queries & Holds for adaptive querying; dimension-robust; applies to our drift model by restriction to $m_t\equiv 0$ \\
+\hline
+\end{tabular}
+\caption{Summary of the main results (read each row left-to-right: the guarantee and the corresponding key conditions / token scaling). Here $r$ is the per-time screening sample size, $m$ and $m_0$ are the per-anchor refinement sample sizes, and $L$ is the background anchoring interval controlling the drift-bias/overhead tradeoff.}
+\label{tab:main_results_summary}
+\end{table}
 
-\paragraph{Population whitening.}
-For analysis, we work with population-whitened views. Let $\Sigma := \mathbb E[xx^\top]$, and define $\tilde x := \Sigma^{-1/2}x$. Under the signed mixture, $\mathbb E[x]=0$ and
-$$
-\Sigma = \mathbb E[\mu_y\mu_y^\top] + \sigma^2 I_d = \frac{\rho}{K}P_{\mathcal S} + \sigma^2 I_d,
-$$
-so whitening is well-defined and makes the noise approximately isotropic in the ambient space.
+\paragraph{Parameter roles (one-line intuition).}
+All quantities are defined in the \emph{task-relevant score direction} induced by $w$.
+The event magnitude $\Delta$ lower bounds the jump size $|\beta_j|$ during each event interval, while $\gamma$ upper bounds the per-step background drift in~\eqref{eq:drift}.
+Their difference $\kappa:=\Delta-2\gamma$ is the screening \emph{margin}: it is the separation between typical background changes (size $\lesssim\gamma$) and event boundary changes (size $\gtrsim\Delta-\gamma$), after accounting for estimation noise.
+Finally, $L$ is the background anchoring interval length (maximum segment length before inserting a new background anchor), trading deterministic drift bias $O(\gamma L)$ against anchor overhead $\Theta(T/L)$ in~\eqref{eq:budget}.
 
-\paragraph{A canonical second-order object.}
-The softmax structure induces a nonnegative weight. Define
-$$
-\phi_{\tau,N}(r,r^+,r^-_{1:N})
-:=
-\frac{\exp(\langle r,r^+\rangle/\tau)}
-{\exp(\langle r,r^+\rangle/\tau)+\sum_{j=1}^N \exp(\langle r,r^-_j\rangle/\tau)}
-\in(0,1).
-$$
-We then consider the population weighted cross-covariance
-$$
-C(W)
-:=
-\mathbb E\Big[\phi_{\tau,N}(r,r^+,r^-_{1:N})\,\tilde x^{(1)}(\tilde x^{(2)})^\top\Big].
-$$
-Crucially, $\phi_{\tau,N}$ depends on $(N,\tau)$ and on $W$ through the normalized inner products, but it is uniformly bounded in $[0,1]$.
+\paragraph{Guarantees overview.}
+Our results answer three questions:
+(i) When does inexpensive temporal screening identify all true event boundaries (up to small localization error)?
+(ii) Given a (nearly correct) segmentation, how many additional spatial tokens suffice for end-to-end score accuracy, and what error terms remain?
+(iii) What is the irreducible token cost of temporal localization under sparse events?
 
-\paragraph{Reduction sandwich.}
-The main technical bridge is a two-sided comparison between minimizing $\mathcal L(W)=\mathbb E[\ell(W)]$ and maximizing a spectral functional of $C(W)$.
-
-\begin{lemma}[InfoNCE to second-order sandwich (formal)]
-\label{lem:infonce-sandwich}
-Let $W\in\mathcal{W}_{m,d}$, and let $\phi_{\tau,N}$ and the weighted whitened cross-covariance
-$$
-C(W) := \mathbb{E}\big[\phi_{\tau,N}(r,r^+,r^-_{1:N})\,\tilde{x}^{(1)}(\tilde{x}^{(2)})^\top\big]
-$$
-be as defined in Section~\ref{sec:proof-overview}. Define the spectral summary
-$$
-\mathrm{Spec}_K(C) := \sum_{i=1}^K \sigma_i(C),
-$$
-i.e., the Ky--Fan $K$-norm (sum of the top-$K$ singular values). Equivalently, $\mathrm{Spec}_K(C)$ is the sum of the top-$K$ canonical correlations between the two whitened views when restricted to $K$-dimensional subspaces, since singular values of a whitened cross-covariance are canonical correlations.
-
-Assume the following reduction regularity conditions hold:
+\begin{theorem}[Projected boundary screening under sparse events]
+\label{thm:screening}
+Assume $\Delta>2\gamma$ and define $\kappa:=\Delta-2\gamma$.
+There exists a universal constant $C>0$ such that if
+\begin{equation}
+\label{eq:r_condition}
+r \;\ge\;
+C\,\frac{\sigma^2}{\kappa^2}\log\frac{T}{\eta},
+\end{equation}
+and $\tau$ is chosen in an admissible interval of width $\Theta(\kappa)$ (e.g., $\tau=\Delta/2$), then with probability at least $1-\eta$:
 \begin{enumerate}
-\item \textbf{Negative concentration:} for $b_j:=\langle r,r^-_j\rangle$,
-$$
-\mathbb{E}\Big[\max_{1\le j\le N} |b_j|\Big]\le c_0\sqrt{\frac{\log N}{m}}.
-$$
-\item \textbf{Norm/normalization concentration:} there is $c_1>0$ such that
-$$
-\mathbb{E}\Big[\big|\|Wx\|_2^2-\mathbb{E}\|Wx\|_2^2\big|\Big]\le c_1\sqrt{m},
-$$
-implying an $O(m^{-1/2})$ control on the error induced by output normalization.
+\item every true event boundary (entry or exit) is detected by $\widehat{\partial E}$ up to a $\pm 1$ time-step localization error;
+\item the number of detected boundaries satisfies
+$
+|\widehat{\partial E}| = O\!\big(s+\log(T/\eta)\big),
+$
+and therefore the number of segments in $\widehat{\mathcal{P}}$ is $O\!\big(s+\log(T/\eta)\big)$.
 \end{enumerate}
-Then there exists a universal constant $C>0$ such that, for all $W\in\mathcal{W}_{m,d}$,
-$$
-g_-\big(\mathrm{Spec}_K(C(W))\big)-\Delta_{\mathrm{red}}
-\;\le\;
-\mathcal{L}(W)
-\;\le\;
-g_+\big(\mathrm{Spec}_K(C(W))\big)+\Delta_{\mathrm{red}},
-$$
-where the two monotone functions $g_\pm:\mathbb{R}_{\ge 0}\to\mathbb{R}$ are explicitly
-$$
-g_-(s) := \log(N+1) - \frac{s}{\tau},
+\end{theorem}
+
+\paragraph{On the role of the $\pm 1$ localization statement.}
+The $\pm 1$ guarantee in Theorem~\ref{thm:screening} corresponds to the simplest pointwise statistic $g_t=|\hat a_t-\hat a_{t-1}|$.
+More generally, if one replaces $g_t$ by a windowed statistic (e.g., comparing averages over windows of size $h$), the same argument yields localization up to $\pm O(h)$ while typically improving robustness to noise (at the expense of constants).
+Crucially, our Stage~II analysis does \emph{not} rely on exact boundary indices: small localization errors only perturb a constant number of segment endpoints, and the estimator~\eqref{eq:estimator} remains valid after the enforced segment-length cap $L$.
+
+\paragraph{Sampling without replacement.}
+The concentration needed for Theorem~\ref{thm:screening} is for the sample mean of $\{y_{t,i}\}_{i=1}^N$ under \emph{uniform sampling without replacement}.
+A Serfling/Bernstein--Serfling inequality yields the same $r=\Theta(\sigma^2\kappa^{-2}\log(T/\eta))$ scaling as in the i.i.d.\ case, up to the standard finite-population correction factor.
+
+\paragraph{Why the margin $\kappa$ behaves like a hard threshold.}
+The screening statistic compares adjacent projected means.
+Under the model, non-boundary times satisfy $|a_t-a_{t-1}|\le\gamma$, whereas true boundaries satisfy $|a_t-a_{t-1}|\ge\Delta-\gamma$.
+Hence the admissible threshold interval that separates the two regimes has width $\Theta(\kappa)$.
+As $\kappa\downarrow 0$, this interval collapses and the required screening sample size diverges as $r=\Theta(\sigma^2\kappa^{-2}\log(T/\eta))$ in~\eqref{eq:r_condition}.
+If $r$ is not increased accordingly, one observes a phase transition to one of two failure modes: either (i) many false positives (up to $\Theta(T)$) when the threshold is set near the background scale, or (ii) systematic miss-detections when the threshold is set near the event scale.
+When $\kappa\le 0$, background drift alone can produce event-sized changes in the score direction, so no threshold can simultaneously control both error types.
+
+\paragraph{Threshold choice: failure modes and a simple practical rule.}
+Theorem~\ref{thm:screening} is stated with an admissible interval parameterized by $(\Delta,\gamma)$; this interval has width $\Theta(\kappa)$ and disappears as $\kappa\downarrow0$.
+It is useful to make the two canonical failure modes explicit:
+\begin{itemize}
+\item If $\tau$ is \emph{too small} (below the effective background scale), then drift and noise trigger many detections and false positives can grow to $\Theta(T)$ in the worst case, destroying the $O(s+\log T)$ segmentation size guarantee.
+\item If $\tau$ is \emph{too large} (above the event-induced jump scale), then true boundaries fall below threshold and screening suffers miss-detections.
+\end{itemize}
+In practice $(\Delta,\gamma)$ are unknown.
+A simple data-driven choice that can be stated in the main text is:
+(i) compute $g_t=|\hat a_t-\hat a_{t-1}|$ from Stage~I samples;
+(ii) let $\tilde g:=\mathrm{median}(\{g_t\}_{t=2}^T)$ and $\mathrm{MAD}:=\mathrm{median}(|g_t-\tilde g|)$;
+(iii) set
+\begin{equation}
+\label{eq:tau_practical}
+\hat\tau
+\;:=\; \tilde g
+\;+
+c\,\mathrm{MAD}\,\sqrt{\log(T/\eta)}
+\end{equation}
+for a moderate constant $c$.
+Under event sparsity (so most $g_t$ are generated by background) and margin $\kappa>0$, this places $\hat\tau$ above the background tail while remaining below the event jump scale, i.e., inside an admissible $\Theta(\kappa)$ interval with high probability.
+We formalize one such calibration guarantee in Appendix~\ref{app:unknown_delta}.
+
+\begin{theorem}[End-to-end score accuracy and drift-induced bias]
+\label{thm:accuracy}
+Assume $\|w\|_2\le1$ and $\Delta>2\gamma$.
+If
+\begin{equation}
+\label{eq:m_conditions}
+m \;\ge\;
+C\,\frac{\sigma^2}{\varepsilon^2}\log\frac{|\widehat T|}{\eta},
 \qquad
-g_+(s) := \log(N+1) - \frac{s}{\tau} + \frac{2}{\tau^2},
-$$
-and the reduction gap is bounded by
-$$
-\Delta_{\mathrm{red}}(N,\tau,d,m)
+m_0 \;\ge\;
+C\,\frac{\sigma^2}{\varepsilon^2}\log\frac{|\widehat B|}{\eta},
+\end{equation}
+then with probability at least $1-\eta$,
+\begin{equation}
+\label{eq:accuracy_bound}
+|\hat s - s^\star|
 \;\le\;
-C\left(
-\frac{1}{\tau^2}
-+
-\sqrt{\frac{\log N}{m}}
-+
-\frac{1}{\sqrt{m}}
+\varepsilon \;+\;
+\underbrace{O(\gamma L)}_{\text{deterministic drift bias}}.
+\end{equation}
+Moreover, the total token usage satisfies
+\begin{equation}
+\label{eq:budget}
+B
+\;=\;
+rT \;+\; m|\widehat T| \;+\; m_0|\widehat B|
+\;=\;
+\tilde O\!\left(
+T\frac{\sigma^2}{(\Delta-2\gamma)^2}
+\;+\;
+(s+\log T)\frac{\sigma^2}{\varepsilon^2}
+\;+\;
+\frac{T}{L}\frac{\sigma^2}{\varepsilon^2}
 \right).
-$$
+\end{equation}
+\end{theorem}
 
-In regimes where $\tau\to\infty$ and $m\to\infty$ with $\log N=o(m)$, we have $\Delta_{\mathrm{red}}=o(1)$, so near-minimizers of InfoNCE correspond to near-maximizers of $\mathrm{Spec}_K(C(W))$, making the reduction operational and citable.
-\end{lemma}
-
-In regimes where negative-sample concentration and the log-sum-exp bounds are tight, $\Delta_{\mathrm{red}}=o(1)$, so near-minimizers of InfoNCE correspond to near-maximizers of the surrogate, and the optimizing subspace is characterized by the top-$K$ singular space of a sample analogue $\widehat C(W)$ built from $M$ unlabeled pairs.
-
-\subsection{Step 2: spike strength under polarity flips and the role of $\alpha(p)$}
-Under the orthogonal signed mixture, the only non-isotropic structure lives in $\mathcal S$. Polarity flipping modifies cross-view alignment by $\mathbb E[s\tilde s]=1-2p$. At the level of whitened second-order objects, the informative component appears as a low-rank deformation supported on $\mathcal S$. Informally,
-$$
-\mathbb E[\tilde x^{(1)}(\tilde x^{(2)})^\top]
-=
-(1-2p)\cdot \Sigma^{-1/2}\Big(\frac{\rho}{K}P_{\mathcal S}\Big)\Sigma^{-1/2},
-$$
-so the spike amplitude scales linearly with $(1-2p)$ before applying the spectral surrogate.
-
-The effective strength parameter entering the spiked-matrix analysis is quadratic in the cross-view correlation, because detectability depends on a signal-to-noise ratio for second-order statistics. This leads to
-$$
-\alpha(p) := (1-2p)^2\cdot \frac{\rho}{\sigma^2}.
-$$
-
-\subsection{Step 3: BBP transition and population success}
-The reduction positions the problem in the universality class of \emph{finite-rank deformations of high-dimensional random matrices}. Concretely, in the whitened space and under the high-dimensional limit, the reduced sample object admits the schematic decomposition
-$$
-\widehat C(W)
-=
-C_0(W) + \theta(p)\,P_{\mathcal S} + \text{fluctuations},
-$$
-where $C_0(W)$ is an approximately isotropic ``null'' component and $\theta(p)\asymp \alpha(p)$ is the spike strength (up to $(N,\tau)$-dependent constants induced by $\phi_{\tau,N}$ and the chosen surrogate).
-
-Spiked random matrix theory implies a BBP-type phase transition: when the spike exceeds a critical threshold (depending on $\gamma_0$ and on how $(N,\tau)$ affect the effective noise level through the reduction), the top singular values separate from the bulk and the corresponding top-$K$ singular space has nontrivial overlap with $\mathcal S$.
-
-This yields the population implication used in Theorem~\ref{thm:success}: if
-$$
-\alpha(p) \ge (1+\delta)\,\alpha_c^{\mathrm{BBP}}(\gamma_0,N,\tau,K),
-$$
-then the surrogate has a strict spectral gap around $\mathcal S$, and any population optimizer (or near-optimizer) of the surrogate must have row space aligned with $\mathcal S$, with quantitative alignment controlled by $\delta$.
-
-\subsection{Step 4: from population structure to empirical near-minimizers}
-Theorem~\ref{thm:success} requires a ``for all near-minimizers'' conclusion. The proof combines uniform convergence with a population gap argument.
-
-\paragraph{Uniform convergence over $\mathcal W_{m,d}$.}
-Because $WW^\top=I_m$ and outputs are normalized, all relevant inner products lie in $[-1,1]$. Moreover, $\ell(W)$ is Lipschitz in these inner products with a constant on the order of $1/\tau$ (the derivative of the log-softmax is bounded by softmax probabilities), and $\ell(W)$ is uniformly bounded by $\log(N+1)+2/\tau$ as noted above. A standard covering/Rademacher argument for the Stiefel-type class then yields, with high probability,
-$$
-\varepsilon_{\mathrm{gen}}
-:=
-\sup_{W\in\mathcal W_{m,d}} \big| \widehat{\mathcal L}(W) - \mathcal L(W) \big|
+\paragraph{Interpreting the $O(\gamma L)$ term (constants and tightness).}
+Theorem~\ref{thm:accuracy} separates (i) a statistical term $\varepsilon$, which can be reduced by increasing $(m,m_0)$, from (ii) a structural term induced by approximating a drifting mean process with finitely many anchors.
+Concretely, for any segment $S$ and anchor $b(S)\in S$,
+\begin{equation}
+\label{eq:bias_radius}
+\left|\frac{1}{|S|}\sum_{t\in S} a_t - a_{b(S)}\right|
 \;\le\;
-\widetilde O\!\left(\Big(\log(N+1)+\frac{1}{\tau}\Big)\sqrt{\frac{d}{M}}\right),
-$$
-where $\widetilde O(\cdot)$ hides polylogarithmic factors in $(d,m)$ and constants depending on the chosen metric entropy bound for $\mathcal W_{m,d}$.
+\gamma\cdot \max_{t\in S}|t-b(S)|.
+\end{equation}
+Thus, if $|S|\le L$ and $b(S)$ is the midpoint, then $\max_{t\in S}|t-b(S)|\le L/2$ and the drift bias in~\eqref{eq:accuracy_bound} can be taken as at most $(\gamma L)/2$ (up to rounding).
+If $b(S)$ is chosen arbitrarily (or randomly), the worst-case radius can be as large as $L$, recovering the stated $O(\gamma L)$ form.
+This dependence on $\gamma L$ is also worst-case tight: for a monotone drift that changes by $\gamma$ per step, any single-anchor representation of a length-$L$ segment incurs $\Omega(\gamma L)$ average approximation error.
 
-\paragraph{Near-minimizer transfer.}
-If $\widehat W$ is an $\varepsilon_{\mathrm{opt}}$-near-minimizer of the empirical loss, then
-$$
-\mathcal L(\widehat W)
-\le
-\inf_{W\in\mathcal W_{m,d}} \mathcal L(W) + \varepsilon_{\mathrm{opt}} + 2\varepsilon_{\mathrm{gen}}.
-$$
+\paragraph{When can we take $m=m_0$ (without loss)?}
+The split between $(m_0,|\widehat B|)$ and $(m,|\widehat T|)$ is used only to highlight that background anchoring and event refinement contribute additively to the budget.
+In many regimes, setting $m_0\asymp m$ is natural, and then~\eqref{eq:budget} makes explicit how the remaining free parameter $L$ controls the anchor overhead.
 
-\paragraph{Population gap enforces alignment.}
-In the BBP regime, the reduced objective (hence $\mathcal L(W)$ via the sandwich) has a strict gap: any row space with noticeable misalignment from $\mathcal S$ must lose a constant amount of spectral mass, translating into a population loss penalty of order $\Omega(\delta)$ after accounting for the monotone transforms. Comparing this penalty to $\varepsilon_{\mathrm{opt}}+2\varepsilon_{\mathrm{gen}}$ forces $\mathrm{Align}(\widehat W)$ to be close to $1$, yielding the quantitative bound stated in Theorem~\ref{thm:success}.
+\paragraph{How to choose the anchoring interval $L$ (order-wise).}
+Theorem~\ref{thm:accuracy} makes the $L$-dependence explicit via two competing terms: the deterministic drift bias $O(\gamma L)$ and the anchor overhead $|\widehat B|=\Theta(T/L)$ in~\eqref{eq:budget}.
+A systematic way to pick $L$ given a target total error level $\epsilon_{\mathrm{tot}}$ is to budget half the error to statistics and half to drift:
+set $\varepsilon:=\epsilon_{\mathrm{tot}}/2$ in~\eqref{eq:m_conditions} and choose
+\begin{equation}
+\label{eq:L_choice}
+L
+\;=\; \Theta\!\Big(\min\{T,\,\epsilon_{\mathrm{tot}}/\gamma\}\Big)
+\end{equation}
+so that $O(\gamma L)=O(\epsilon_{\mathrm{tot}})$.
+This choice is also budget-optimal up to constants among all $L$ that satisfy the same drift-bias constraint, since the anchoring term $T/L$ decreases with $L$.
 
-\subsection{Step 5: downstream linear probing}
-Once $\mathrm{row}(\widehat W)$ is aligned with $\mathcal S$, the class means remain well-separated in representation space while the noise remains approximately spherical due to whitening and the row-orthonormal constraint. Standard margin-based generalization arguments for multiclass linear classifiers then convert the alignment and signal-to-noise parameters into a labeled sample complexity bound for linear probing, as stated in Theorem~\ref{thm:success}.
+\noindent
+\textbf{Applicability.} In the slow-drift regime $\gamma\ll \epsilon_{\mathrm{tot}}$,~\eqref{eq:L_choice} yields $L\gg1$ and hence $T/L\ll T$, so time--space decoupling can strictly reduce token usage relative to uniform refinement.
+In the moderate-drift regime $\gamma\approx \epsilon_{\mathrm{tot}}$, the optimal choice is $L=\Theta(1)$ and the anchoring overhead becomes $\Theta(T)$, so the practical advantage may diminish.
+If $\gamma\gg \epsilon_{\mathrm{tot}}$, no choice of $L\ge1$ can keep the drift bias below $\epsilon_{\mathrm{tot}}$ using a single-anchor-per-block representation; one then needs either a richer within-block model (more anchors) or a different structural assumption on the background.
 
-\subsection{Step 6: failure from second-order statistics}
-On the failure side, if
-$$
-\alpha(p) \le (1-\delta)\,\alpha_c^{\mathrm{fail}}(\gamma_0,N,\tau,K),
-$$
-then the spike is subcritical for the induced spiked-matrix model: no informative outliers emerge, and the top-$K$ singular space of the reduced second-order object is asymptotically orthogonal to $\mathcal S$. This implies Theorem~\ref{thm:failure} in a deliberately conservative but broadly applicable form:
-\begin{itemize}
-\item \textbf{Non-identifiability:} any estimator of a $K$-dimensional subspace that is measurable with respect to the reduced second-order object (e.g., any procedure that relies only on whitened cross-covariance or CCA-like statistics produced by the reduction) has vanishing overlap with $\mathcal S$ asymptotically.
-\item \textbf{Practical scope:} this covers a wide class of contrastive estimators whose analyses or implementations effectively depend on such second-order summaries, ruling out better-than-chance linear probing for representations obtained from these second-order estimators in this regime.
-\end{itemize}
-This ``safe'' failure statement isolates what can be concluded from the reduction alone; it does not claim that \emph{every} global minimizer of the original InfoNCE objective is uninformative without an additional tightness argument for the full objective landscape.
+\subsection{Information-theoretic lower bound}
 
-\subsection{Step 7: two-sided boundaries and asymptotic sharpness}
-Definitions~\ref{def:phase-boundaries} and Theorems~\ref{thm:success}--\ref{thm:failure} yield a gray zone $p\in[p_-,p_+]$ where sufficient and necessary conditions do not match. The width of this zone is controlled by the tightness of the reduction and the sharpness of the spiked-matrix thresholds.
+\begin{theorem}[Necessity of temporal identification (localization lower bound)]
+\label{thm:lower}
+Consider a simplified model with constant background ($m_t\equiv0$), $s$ isolated event times, and a fixed event shift vector $\delta$ with $\|\delta\|_2=\Delta$.
+For any (possibly adaptive) algorithm that queries fewer than
+\begin{equation}
+\label{eq:lower_bound}
+B
+\;<\;
+c\,\frac{\sigma^2}{\Delta^2}
+\,s\log\frac{T}{s}
+\end{equation}
+tokens, there exists a distribution under which the algorithm fails with probability at least $1/3$ to correctly identify the event set.
+\end{theorem}
 
-In regimes where the InfoNCE-to-second-order sandwich gap satisfies $\Delta_{\mathrm{red}}(N,\tau,d,m)=o(1)$, the sufficient and necessary thresholds coincide asymptotically:
-$$
-\alpha_c^{\mathrm{BBP}}(\gamma,N,\tau,K) - \alpha_c^{\mathrm{fail}}(\gamma,N,\tau,K) \to 0,
-$$
-which implies $p_+-p_-\to 0$ and yields the asymptotically sharp phase transition stated in Corollary~\ref{cor:sharp}.
+\paragraph{Compatibility with the drift model.}
+Although Theorem~\ref{thm:lower} is stated for $m_t\equiv 0$, it applies \emph{a fortiori} to the drift model in~\eqref{eq:model}--\eqref{eq:drift}: any algorithm designed to handle drifting backgrounds must also succeed on the special case of zero drift.
+More broadly, allowing drift can only make localization harder, so~\eqref{eq:lower_bound} remains a valid necessary condition.
 
-\section{Experiments}
+\paragraph{Alignment with the query model and the role of $d$.}
+Theorem~\ref{thm:lower} applies to fully adaptive token queries: at each step, the algorithm may choose which $(t,i)$ to query based on all past observations.
+The lower bound is dimension-robust because it can be witnessed by a one-dimensional construction: it suffices to consider instances where all signal and noise lie in the span of $\delta$ (equivalently, project observations onto $\delta/\|\delta\|_2$).
+Thus, allowing $d>1$ and revealing full vectors does not circumvent the $s\log(T/s)$ localization barrier.
+
+\paragraph{Tightness and remaining gaps.}
+Theorem~\ref{thm:lower} implies that any procedure that must localize $s$ rare event times among $T$ candidates incurs an information-theoretic cost of order
+$\Omega\!\big(\tfrac{\sigma^2}{\Delta^2}s\log(T/s)\big)$ token queries (up to constants).
+Our Stage~I analysis provides a clean, single-pass sufficient condition via a scan over all $T$ times (cost $rT$ in~\eqref{eq:budget}).
+Closing the gap between $rT$ and the $s\log(T/s)$ lower bound would require more adaptive or multi-scale localization strategies that avoid inspecting every time step.
+
+\paragraph{What this lower bound does (and does not) imply.}
+Theorem~\ref{thm:lower} is a lower bound for \emph{localization} (identifying the event set), not directly for estimating the global score $s^\star$.
+Therefore it does \emph{not} rule out the possibility of estimating $s^\star$ accurately without ever producing an explicit event set.
+Our upper bounds analyze a concrete time-first screening scheme that does localize boundaries because this is the natural mechanism by which sparse events are preserved under a tight budget; alternative ``non-localizing'' estimators are an interesting direction but are not covered by our analysis.
+
+\paragraph{Toward matching the localization lower bound.}
+Promising directions include multiscale screening and group-testing style zoom-in procedures: e.g., start with a coarse subsampling of time, then iteratively allocate additional $r$-budget only to intervals whose projected statistics exceed a background-calibrated threshold.
+Such schemes aim to concentrate queries near the (unknown) $O(s)$ boundary locations and could plausibly reduce the scan cost toward $\tilde O(s\log(T/s))$ while retaining the task-aligned projection that makes Theorem~\ref{thm:screening} dimension-robust.
+
+\section{Conclusion}
 
 % Acknowledgments---Will not appear in anonymized version
 \acks{We thank a bunch of people and funding agency.}
@@ -439,9 +467,8 @@ which implies $p_+-p_-\to 0$ and yields the asymptotically sharp phase transitio
 
 % \crefalias{section}{appendix} % uncomment if you are using cleveref
 
-\section{Proof of Theorem 1}
-\section{Proof of Theorem 2}
-\section{Proof of Theorem 3}
-\section{Proof of Theorem 4}
+\section{app 1}
+\label{app:unknown_delta}
+\section{app 2}
 
 \end{document}
