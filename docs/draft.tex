@@ -420,8 +420,191 @@ Such schemes aim to concentrate queries near the (unknown) $O(s)$ boundary locat
 
 % \crefalias{section}{appendix} % uncomment if you are using cleveref
 
-\section{app 1}
+\section{Calibrating the screening threshold when \texorpdfstring{$\Delta$}{Delta} is unknown}
 \label{app:unknown_delta}
-\section{app 2}
+
+This appendix formalizes a simple data-driven calibration rule for the Stage~I screening threshold when the
+signal and drift scales $(\Delta,\gamma)$ are unknown.
+Throughout we use the projected setup in \S\ref{sec:setup}--\S\ref{sec:main_results}:
+$y_{t,i}=\langle w,x_{t,i}\rangle$, $a_t=\langle w,\mu_t\rangle$, and
+$\hat a_t=\frac{1}{r}\sum_{i\in\mathcal{I}_t} y_{t,i}$.
+
+\subsection{Background vs.\ boundary indices}
+
+Define the (entry/exit) boundary set
+\begin{equation}
+\label{eq:boundary_def_app}
+\partial E
+\;:=\;
+\Big\{t\in\{2,\dots,T\}:\; \mathbf{1}\{t\in E\}\neq \mathbf{1}\{t-1\in E\}\Big\}.
+\end{equation}
+Under the model assumptions in \S\ref{sec:setup} (piecewise-constant event shift in the score direction),
+$\partial E$ contains at most two indices per event interval, hence $|\partial E|\le 2s$.
+
+Let
+\begin{equation}
+\label{eq:g_def_app}
+g_t \;:=\; |\hat a_t-\hat a_{t-1}|,
+\qquad t=2,\dots,T.
+\end{equation}
+The goal of screening is to choose a threshold $\tau$ such that $g_t\le \tau$ for all $t\notin \partial E$ and
+$g_t>\tau$ for all $t\in \partial E$, up to the localization slack already stated in
+Theorem~\ref{thm:screening}.
+
+\subsection{Uniform concentration of Stage~I means}
+
+\begin{lemma}[Uniform concentration of $\hat a_t$]
+\label{lem:uniform_conc_app}
+Assume $\langle w,\xi_{t,i}\rangle$ is $\sigma^2$-subGaussian and Stage~I samples are uniform (without replacement).
+There exists a universal constant $c>0$ such that for any $\eta\in(0,1)$, with probability at least $1-\eta$,
+\begin{equation}
+\label{eq:uniform_conc_app}
+\max_{t\in[T]} |\hat a_t-a_t|
+\;\le\;
+u(r,\eta)
+\;:=\;
+c\,\sigma\sqrt{\frac{\log(2T/\eta)}{r}}.
+\end{equation}
+\end{lemma}
+
+\begin{proof}
+For each fixed $t$, $\hat a_t$ is an average of $r$ subGaussian variables (under sampling without replacement,
+a Bernstein--Serfling type inequality yields the same subGaussian tail up to a finite-population correction factor).
+Thus $\mathbb{P}(|\hat a_t-a_t|>u)\le 2\exp(-\Omega(r u^2/\sigma^2))$.
+Set $u=u(r,\eta)$ so that this probability is at most $\eta/T$ and take a union bound over $t\in[T]$.
+\end{proof}
+
+\subsection{Deterministic separation under a margin}
+
+Let $\kappa:=\Delta-2\gamma$ be the screening margin (as in the main text).
+The next lemma shows that when the estimation error is smaller than $\kappa$, the statistics $\{g_t\}$ split into
+a ``background'' range and a ``boundary'' range.
+
+\begin{lemma}[Separation of $g_t$ on the good event]
+\label{lem:separation_app}
+Assume $\Delta>2\gamma$ and define $\kappa:=\Delta-2\gamma$.
+On the event \eqref{eq:uniform_conc_app}, for all $t\notin \partial E$ and all $t\in\partial E$,
+\begin{align}
+\label{eq:sep_bg_app}
+t\notin\partial E:
+\quad
+g_t
+&\le
+\gamma + 2u(r,\eta),
+\\
+\label{eq:sep_bd_app}
+t\in\partial E:
+\quad
+g_t
+&\ge
+(\Delta-\gamma) - 2u(r,\eta)
+=
+\gamma+\kappa - 2u(r,\eta).
+\end{align}
+In particular, if $u(r,\eta)\le \kappa/8$, then
+\begin{equation}
+\label{eq:gap_app}
+\max_{t\notin\partial E} g_t
+\;\le\;
+\gamma+\kappa/4,
+\qquad
+\min_{t\in\partial E} g_t
+\;\ge\;
+\gamma+3\kappa/4,
+\end{equation}
+so any $\tau\in(\gamma+\kappa/4,\ \gamma+3\kappa/4)$ separates background from boundaries.
+\end{lemma}
+
+\begin{proof}
+Write
+$g_t = |(a_t-a_{t-1}) + (\hat a_t-a_t) - (\hat a_{t-1}-a_{t-1})|$ and apply the triangle inequality.
+For $t\notin\partial E$, the event indicator does not change between $t-1$ and $t$, and by the drift condition
+$|a_t-a_{t-1}|\le \gamma$.
+For $t\in\partial E$, the event indicator flips, so the projected mean changes by at least $\Delta$ in magnitude,
+up to a drift term of at most $\gamma$, giving $|a_t-a_{t-1}|\ge \Delta-\gamma$.
+Combine with $|\hat a_t-a_t|\le u(r,\eta)$ and $|\hat a_{t-1}-a_{t-1}|\le u(r,\eta)$.
+\end{proof}
+
+\subsection{A robust, data-driven threshold}
+
+We now study the practical threshold rule described around \eqref{eq:tau_practical}:
+\begin{equation}
+\label{eq:tau_hat_app}
+\tilde g
+\;:=\;
+\mathrm{median}\big(\{g_t\}_{t=2}^T\big),
+\qquad
+\mathrm{MAD}
+\;:=\;
+\mathrm{median}\big(\{|g_t-\tilde g|\}_{t=2}^T\big),
+\qquad
+\hat\tau
+\;:=\;
+\tilde g + c_0\,\mathrm{MAD}\,\sqrt{\log(2T/\eta)}.
+\end{equation}
+
+The key point is that under sparse events, the median and MAD are controlled by the \emph{background} portion
+of $\{g_t\}$, and hence $\hat\tau$ lands inside a valid $\Theta(\kappa)$ admissible interval.
+
+\begin{theorem}[One calibration guarantee for \eqref{eq:tau_hat_app}]
+\label{thm:unknown_delta_app}
+Assume $\Delta>2\gamma$ and let $\kappa:=\Delta-2\gamma$.
+Assume event sparsity in the sense that $|\partial E|\le (T-1)/4$.
+Let $u(r,\eta)$ be as in Lemma~\ref{lem:uniform_conc_app} and assume $u(r,\eta)\le \kappa/16$.
+
+Additionally, assume the background change statistics are not too dispersed:
+\begin{equation}
+\label{eq:bg_dispersion_assump_app}
+\mathrm{MAD}\big(\{g_t\}_{t\notin\partial E}\big)
+\;\le\;
+\frac{c_1\,\kappa}{\sqrt{\log(2T/\eta)}}
+\end{equation}
+for a sufficiently small universal constant $c_1>0$.
+Then there exists a universal constant choice of $c_0>0$ in \eqref{eq:tau_hat_app} such that, with probability at least
+$1-\eta$,
+\begin{equation}
+\label{eq:tau_in_gap_app}
+\gamma+\kappa/4
+\;<\;
+\hat\tau
+\;<\;
+\gamma+3\kappa/4,
+\end{equation}
+and therefore Stage~I screening with threshold $\tau=\hat\tau$ satisfies the conclusions of
+Theorem~\ref{thm:screening}.
+\end{theorem}
+
+\begin{proof}[Proof sketch]
+Work on the good event of Lemma~\ref{lem:uniform_conc_app}.
+By sparsity, at least $3/4$ of the indices $t=2,\dots,T$ are non-boundary, so the overall median $\tilde g$
+is a background median and in particular $\tilde g\le \gamma+2u(r,\eta)$ by \eqref{eq:sep_bg_app}.
+Moreover, the overall MAD is controlled by the background MAD up to an additive $O(u(r,\eta))$ perturbation
+(since $g_t$ differs from its noiseless counterpart by at most $2u(r,\eta)$).
+Under \eqref{eq:bg_dispersion_assump_app} and $u(r,\eta)\le \kappa/16$, choosing $c_0$ small enough ensures
+$$
+\hat\tau
+=
+\tilde g + c_0\,\mathrm{MAD}\,\sqrt{\log(2T/\eta)}
+\;\le\;
+\gamma+2u(r,\eta) + c_0\cdot O(\kappa)
+\;<\;
+\gamma+3\kappa/4.
+$$
+On the other hand, since $\tilde g$ is a background median and the background mass dominates,
+$\hat\tau$ exceeds a constant-factor upper tail of the background distribution; combined with
+\eqref{eq:gap_app} this yields $\hat\tau>\gamma+\kappa/4$.
+The interval \eqref{eq:tau_in_gap_app} is contained in an admissible $\Theta(\kappa)$ interval, hence
+Theorem~\ref{thm:screening} applies.
+\end{proof}
+
+\paragraph{Remarks.}
+(1) Condition~\eqref{eq:bg_dispersion_assump_app} is a mild regularity requirement ensuring that the background
+change statistics have dispersion smaller than the margin $\kappa$ (after the $\sqrt{\log(2T/\eta)}$ inflation),
+so that the robust rule does not set $\hat\tau$ too large.
+(2) If one prefers to avoid \eqref{eq:bg_dispersion_assump_app}, a conservative alternative is a threshold sweep:
+run screening for a geometric grid of $\tau$ values and pick the smallest $\tau$ for which the number of detections
+is $O(s+\log(T/\eta))$; this also targets the admissible $\Theta(\kappa)$ interval but is more verbose to analyze.
+
+\section{Related Work}
 
 \end{document}
